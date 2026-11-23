@@ -14,7 +14,7 @@ public:
     juce::Label label;
 };
 
-// 10-Octave Compact Color-Coded Piano Strip (with RED Keyswitch highlight!)
+// 10-Octave Compact Color-Coded Piano Strip (Red Keyswitch Keys)
 class ColorPianoStrip : public juce::Component
 {
 public:
@@ -30,7 +30,7 @@ private:
     int pressedNote = -1;
 };
 
-// Kontakt-Style Group Editor Sub-Tab: 5x5 Vertical Grid (25 visible, Row 6+ Scrolls) + Rename + Mute + RR Set + Keyswitch
+// Kontakt-Style Group Editor Panel: Half-Width Compact Tiles (5x5 Grid, Row 6+ Scrolls) + Grp Vol/Pan + RR + Keyswitch
 class GroupEditorPanel : public juce::Component
 {
 public:
@@ -65,12 +65,10 @@ private:
     juce::TextButton createGroupBtn { "+ Empty Group" };
     juce::TextButton deleteGroupBtn { "Del Grp" };
 
-    // 5x5 Vertical Scrollable Grid
     juce::Viewport gridViewport;
     juce::Component gridContent;
     juce::OwnedArray<GroupTile> groupTiles;
 
-    // Group Start Options Bar (Name, RR Set, Keyswitch)
     juce::Label startBarLabel;
     juce::Label nameFieldLabel;
     juce::TextEditor groupNameEdit;
@@ -78,11 +76,12 @@ private:
     juce::ComboBox rrSetBox;
     juce::Label ksLabel;
     juce::ComboBox keyswitchBox;
+    LabeledKnob grpVolKnob { "Grp Vol" }, grpPanKnob { "Grp Pan" };
 
     void syncStartBar();
 };
 
-// 10-Octave Key Mapper (Zoomable, Multi-Select, Auto-Grid, Auto-Map, Auto-Spread, Red Keyswitch)
+// 10-Octave Key Mapper (NO Right-Click Delete; Batch Multi-Select; Click-to-Audition; Auto-Layer)
 class KeyMapperComponent : public juce::Component
 {
 public:
@@ -90,9 +89,11 @@ public:
     void setReadOnly (bool ro) { readOnly = ro; repaint(); }
     void setVelocityGridDivisions (int divs) { velGridDivs = divs; repaint(); }
     void setSelectedGroupsOnly (bool sgo) { selectedGroupsOnly = sgo; repaint(); }
+    void setAuditionOnClick (bool aud) { auditionOnClick = aud; }
     bool isReadOnly() const { return readOnly; }
 
     void selectAllZones();
+    void deleteSelectedZones();
     void clearSelection();
     void selectSingleZone (int idx);
     void autoGridSelectedZones();
@@ -116,6 +117,7 @@ private:
 
     bool readOnly = true;
     bool selectedGroupsOnly = true;
+    bool auditionOnClick = false;
     int velGridDivs = 4;
 
     std::set<int> selectedZoneIndices;
@@ -141,12 +143,12 @@ private:
     void sanitizeSelection();
 };
 
-// Zoomable Kontakt-Style Sample Wave Editor with Grid & Snap
+// Zoomable Kontakt-Style Sample Wave Editor with Live Playhead, Grid & Snap
 class WaveEditorComponent : public juce::Component
 {
 public:
     WaveEditorComponent (NoiseMu6ixRhythmAudioProcessor& p);
-    void setSnapMode (int mode) { snapMode = mode; repaint(); } // 0=Off, 1=Grid, 2=Zero-X
+    void setSnapMode (int mode) { snapMode = mode; repaint(); }
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
@@ -178,12 +180,92 @@ private:
     float snapToGrid (float normX) const;
 };
 
+// Live EQ 3 Curve Graph (100Hz - 10kHz, +-18dB) matching Kontakt EQ 3
+class EqCurveDisplay : public juce::Component
+{
+public:
+    EqCurveDisplay (NoiseMu6ixRhythmAudioProcessor& p);
+    void setTarget (int rackType, int slotIdx) { targetRack = rackType; targetSlot = slotIdx; repaint(); }
+    void paint (juce::Graphics& g) override;
+
+private:
+    NoiseMu6ixRhythmAudioProcessor& processor;
+    int targetRack = 0; // 0=Group Insert, 1=Send FX, 2=Main FX
+    int targetSlot = 0;
+};
+
+// Kontakt-Style Effects Panel (Amplifier + 8 Group Insert + 8 Send FX + 8 Main FX + EQ 3 Curve)
+class KontaktEffectsPanel : public juce::Component
+{
+public:
+    KontaktEffectsPanel (NoiseMu6ixRhythmAudioProcessor& p);
+    void paint (juce::Graphics& g) override;
+    void resized() override;
+    void refreshFromProcessor();
+
+private:
+    NoiseMu6ixRhythmAudioProcessor& processor;
+
+    // 0 = Group Insert FX, 1 = Send FX, 2 = Main FX
+    int activeRack = 0;
+    int activeSlot = 0;
+
+    // Amplifier & Routing Strip
+    juce::Label ampTitleLbl;
+    LabeledKnob ampVolKnob { "Volume" }, ampPanKnob { "Pan" }, ampSendKnob { "Send" };
+    juce::ToggleButton phaseInvBtn { "Phase Invert" };
+    juce::ToggleButton lrSwapBtn { "L/R Swap" };
+    juce::Label outLbl;
+    juce::ComboBox outBusBox;
+
+    // 3 Racks x 8 Slot Boxes (with B bypass & X remove)
+    struct SlotBox : public juce::Component
+    {
+        SlotBox (int rIdx, int sIdx, std::function<void(int, int)> onSel,
+                 std::function<void(int, int)> onByp, std::function<void(int, int)> onRem,
+                 std::function<void(int, int)> onChoose);
+        void paint (juce::Graphics& g) override;
+        void resized() override;
+        void mouseDown (const juce::MouseEvent& e) override;
+
+        int rackIdx = 0, slotIdx = 0;
+        juce::String fxName { "Add FX +" };
+        bool isEmpty = true;
+        bool isBypassed = false;
+        bool isSelected = false;
+
+        juce::TextButton bypBtn { "B" };
+        juce::TextButton remBtn { "X" };
+        std::function<void(int, int)> onSelect, onBypass, onRemove, onPickMenu;
+    };
+
+    juce::Label insertRackLbl, sendRackLbl, mainRackLbl;
+    std::array<std::unique_ptr<SlotBox>, 8> insertSlots;
+    std::array<std::unique_ptr<SlotBox>, 8> sendSlots;
+    std::array<std::unique_ptr<SlotBox>, 8> mainSlots;
+
+    // Inline Effect Editor Area
+    juce::Label editorHeaderLbl;
+
+    // EQ 3 Controls (9 knobs + Live Graph)
+    LabeledKnob eqF1 { "Freq 1" }, eqF2 { "Freq 2" }, eqF3 { "Freq 3" };
+    LabeledKnob eqB1 { "BW 1" },   eqB2 { "BW 2" },   eqB3 { "BW 3" };
+    LabeledKnob eqG1 { "Gain 1" }, eqG2 { "Gain 2" }, eqG3 { "Gain 3" };
+    EqCurveDisplay eqGraph;
+
+    // Generic 4-knob Controls for Compressor, Saturation, Filter, Transient, Delay, Reverb, Chorus, Width, Limiter
+    LabeledKnob genP1 { "P1" }, genP2 { "P2" }, genP3 { "P3" }, genP4 { "P4" };
+
+    InsertEffect* getTargetFx();
+    void selectSlot (int rackIdx, int slotIdx);
+    void showAddFxMenu (int rackIdx, int slotIdx);
+};
+
 class MainPluginView : public juce::Component,
                        public juce::ListBoxModel
 {
 public:
     enum class ActiveTab { Main = 0, Edit };
-    enum class EditSubTab { Group = 0, Mapping, Wave };
     enum class WaveSubTab { Loop = 0, GridSync, EditTone };
 
     MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function<void(float)> onScaleSelected);
@@ -198,26 +280,26 @@ public:
     void syncPerZoneControls();
     void togglePlayPause();
     void selectAllInEditTab();
+    void deleteSelectedInEditTab();
     void repaintDynamicAreas();
 
 private:
     NoiseMu6ixRhythmAudioProcessor& audioProcessor;
     std::function<void(float)> scaleCallback;
     ActiveTab activeTab = ActiveTab::Main;
-    EditSubTab editSubTab = EditSubTab::Mapping;
     WaveSubTab waveSubTab = WaveSubTab::Loop;
 
-    // Clickable Title for Scale Menu
     juce::TextButton titleScaleBtn { "NOISE MU6IX RHYTHM" };
 
     // Top-level Tabs: MAIN and EDIT
     juce::TextButton tabMainBtn { "MAIN" };
     juce::TextButton tabEditBtn { "EDIT" };
 
-    // EDIT Sub-Tab Buttons: Group Editor | Mapping Editor | Wave Editor
-    juce::TextButton subGroupBtn { "Group Editor" };
-    juce::TextButton subMapBtn   { "Mapping Editor" };
-    juce::TextButton subWaveBtn  { "Wave Editor" };
+    // Stackable Toggle Buttons in EDIT tab: Group Editor | Mapping Editor | Wave Editor | Effects
+    juce::ToggleButton togGroupBtn { "Group Editor" };
+    juce::ToggleButton togMapBtn   { "Mapping Editor" };
+    juce::ToggleButton togWaveBtn  { "Wave Editor" };
+    juce::ToggleButton togFxBtn    { "Effects" };
 
     // Library Panel
     juce::TextButton addLibBtn { "+ ADD LIBRARY" };
@@ -242,17 +324,24 @@ private:
     juce::Label gridLabel;
     juce::ComboBox gridBox;
     juce::ToggleButton seqLoopBtn { "LOOP" };
+    juce::TextButton seqClearBtn { "Clr" };
 
-    // ---------------- EDIT SUB-TAB 1: GROUP EDITOR ----------------
+    // ---------------- SCROLLABLE STACKABLE EDIT PAGE ----------------
+    juce::Viewport editViewport;
+    juce::Component editContent;
+
     GroupEditorPanel groupPanel;
 
-    // ---------------- EDIT SUB-TAB 2: MAPPING EDITOR ----------------
+    // Mapping Editor Section inside editContent
+    juce::Label mapHeaderLbl;
     juce::ToggleButton frrBtn { "FRR" };
     juce::ToggleButton fvlBtn { "FVL" };
     juce::ToggleButton pitchTrackBtn { "PITCH" };
     juce::TextButton selectAllZonesBtn { "ALL" };
+    juce::TextButton delZoneBtn { "Del" };
     juce::ToggleButton zoneSoloBtn { "Zone Solo" };
     juce::ToggleButton selGroupsOnlyBtn { "Sel Grp Only" };
+    juce::ToggleButton auditionBtn { "Audition" };
     juce::ToggleButton listViewBtn { "List View" };
     juce::TextButton autoGridBtn { "Auto Grid" };
     juce::TextButton autoMapBtn { "Auto-Map" };
@@ -263,11 +352,9 @@ private:
     juce::ComboBox velGridBox;
     juce::ComboBox zoneColourBox;
 
-    // Editable Numeric Zone Info Bar
-    juce::Label lkLbl, hkLbl, lvLbl, hvLbl, rkLbl;
-    juce::TextEditor lkEdit, hkEdit, lvEdit, hvEdit, rkEdit;
+    juce::Label lkLbl, hkLbl, lvLbl, hvLbl, vfLbl, rkLbl;
+    juce::TextEditor lkEdit, hkEdit, lvEdit, hvEdit, vfEdit, rkEdit;
 
-    // Zoomable Mapping Viewport + List View
     juce::Viewport mapViewport;
     KeyMapperComponent editKeyMapper;
     float mapZoomFactor = 1.0f;
@@ -284,7 +371,9 @@ private:
     ZoneListModel zoneListModel;
     juce::ListBox zoneListBox;
 
-    // ---------------- EDIT SUB-TAB 3: WAVE EDITOR ----------------
+    // Wave Editor Section inside editContent
+    juce::Label waveHeaderLbl;
+    juce::TextButton wavePlayBtn { "Play" };
     juce::ComboBox trackSelectBox;
     juce::ToggleButton realRRBtn { "RR" };
     juce::ComboBox waveZoomBox;
@@ -295,38 +384,38 @@ private:
     WaveEditorComponent waveEditor;
     float waveZoomFactor = 1.0f;
 
-    // Kontakt-style 3 Wave Sub-Tabs below waveform
     juce::TextButton waveSubLoopBtn { "Sample Loop" };
     juce::TextButton waveSubGridBtn { "Grid / Sync" };
     juce::TextButton waveSubToneBtn { "Edit / Tone" };
 
-    // Wave Sub-Tab 1: Loop
     juce::ToggleButton sampleLoopBtn { "LOOP ON" };
     juce::ComboBox loopModeBox;
     LabeledKnob loopXfadeKnob { "X-Fade" }, loopTuneKnob { "L-Tune" };
     juce::Label loopCountLbl;
     juce::ComboBox loopCountBox;
 
-    // Wave Sub-Tab 2: Grid / Sync
     juce::ToggleButton waveGridOnBtn { "Grid ON" };
     juce::ComboBox waveGridModeBox;
     juce::ComboBox waveGridWidthBox;
+    juce::TextButton sliceKeysBtn { "Slice -> Keys" };
     juce::Label waveBpmLbl;
     juce::TextEditor waveBpmEdit;
 
-    // Wave Sub-Tab 3: Edit / Tone
     juce::ToggleButton reverseBtn { "REV" };
     juce::TextButton normalizeBtn { "NORM" };
+    juce::TextButton trimBtn { "TRIM" };
     LabeledKnob fadeInKnob { "Fade In" }, fadeOutKnob { "Fade Out" };
     LabeledKnob startKnob { "Start" }, endKnob { "End" }, loopStartKnob { "L-Start" }, loopEndKnob { "L-End" };
     LabeledKnob pitchKnob { "Pitch" }, panKnob { "Pan" }, volKnob { "Vol" };
     LabeledKnob attackKnob { "Atk" }, decayKnob { "Dec" }, sustainKnob { "Sus" }, releaseKnob { "Rel" };
     LabeledKnob cutoffKnob { "Cut" }, resKnob { "Res" };
 
+    // Kontakt Effects Rack Section inside editContent
+    KontaktEffectsPanel effectsPanel;
+
     // Bottom 10-Octave Piano Strip
     ColorPianoStrip bottomPiano;
 
-    // Global APVTS Attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> frrAtt, fvlAtt, pitchTrackAtt, seqLoopAtt, hostSyncAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> shuffleAtt, timeRandAtt, velRandAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> gridAtt;
@@ -334,8 +423,8 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser;
 
     void setActiveTab (ActiveTab tab);
-    void setEditSubTab (EditSubTab sub);
     void setWaveSubTab (WaveSubTab sub);
+    void layoutEditStack (int viewportWidth);
     void refreshMoveToGroupBox();
     void applyNumericZoneEdits();
     void applyBpmText();

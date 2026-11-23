@@ -1,13 +1,17 @@
-# Noise Mu6ix Rhythm v1.0.9 (VST3)
+# Noise Mu6ix Rhythm v1.1.0 (VST3)
 
-## v1.0.9-ல் செய்துள்ள முக்கிய மாற்றங்கள் (Kontakt-Style Full Edit Suite):
-1. **EDIT பேஜில் 3 தனித்தனி டேப்கள்:** **`Group Editor` | `Mapping Editor` | `Wave Editor`** — மூன்றையும் கிளிக் செய்து முழு அளவில் எளிதாக எடிட் செய்யலாம்.
-2. **Group Editor (5×5 Vertical Grid + Keyswitch + Group Round Robin):**
-   - ஒரு ரோ-வில் 5 குரூப்கள், மொத்தம் 5 ரோ (25 குரூப்கள்) ஒரே நேரத்தில் தெரியும்; 6-வது ரோ (26-வது குரூப்) முதல் Vertical Scrollbar வரும்.
-   - குரூப் மேல் டபுள் கிளிக் செய்தோ அல்லது கீழே உள்ள `Name` பாக்ஸிலோ Rename செய்யலாம்; ஒவ்வொரு குரூப்பிலும் `M` (Mute) பட்டன் உள்ளது.
-   - **Group Start Options:** பல குரூப்களை ஒரே `RR Set` (1–8) மற்றும் ஒரே `Keyswitch` (`C0–B2`) கீ-க்கு செட் செய்தால், அந்த Keyswitch அழுத்தும்போது அந்த குரூப்கள் Round Robin-ல் இயங்கும். Keyswitch கீ-க்கள் பியானோவில் **சிவப்பு (Red)** நிறத்தில் தெரியும்.
+## v1.1.0-ல் செய்துள்ள முழு மாற்றங்கள் (Kontakt-Style Stackable Edit & Effects Suite):
+1. **Stackable Toggle Panels (`EDIT` பேஜ்):**
+   - மேலே **`Group Editor` | `Mapping Editor` | `Wave Editor` | `Effects`** ஆகிய 4 பட்டன்களும் ON/OFF Toggle-ஆக செயல்படும் — எதை எதை ஆன் செய்கிறீர்களோ அவை அனைத்தும் ஒரே பக்கத்தில் ஒன்றன் கீழ் ஒன்றாக ஸ்க்ரோல் செய்து பார்க்கும்படி வரும்.
+2. **Group Editor:**
+   - பாதி அகலத்துடன் சிறிய Group Tiles (5×5 Grid, Row 6+ Vertical Scroll), டபுள் கிளிக்/பாக்ஸில் Rename, Mute (`M`) + Mute Dimming, **`Grp Vol` & `Grp Pan`**, **`RR Set` (1–8)** + **`Keyswitch`** (பியானோவில் Red நிறம்).
 3. **Mapping Editor:**
-   - **Editable Numeric Bar** (`LowK`, `HighK`, `LowV`, `HighV`, `Root`), **`Move->Grp`**, **`Dup`**, **`Auto-Map`** (ஃபைல் பெயரில் இருந்து தானாக மேப் செய்ய), **`Spread`** (காலியான கீ-க்களை நிரப்ப), **`List View`**, மற்றும் **`Zoom` (100% / 150% / 200%)**.
+   - Right-Click Delete நீக்கப்பட்டு, மேலே **`Del`** பட்டன் + கீபோர்டில் **`Delete` / `Backspace`** அழுத்தினால் டெலீட் ஆகும் வகையில் மாற்றப்பட்டுள்ளது.
+   - ஒரே கீ-யில் பல சாம்பிள்கள் போட்டால் தானாக Velocity Layers-ஆக அடுக்கும் வசதி, Batch Edit (`LowK`, `HighK`, `LowV`, `HighV`, **`VFade`**, `Root`), **`Audition`** (Click-to-Audition), `Auto Grid`, `Auto-Map`, `Spread`, `Dup`, `Move->Grp`, `List View`, `Zoom`.
 4. **Wave Editor:**
-   - மேலே **`Zoom` (100% / 200% / 400%)**, **`Snap` (`Off`, `Grid`, `Zero-X`)**, **`S.Start | S.End | Len`**.
-   - கீழே 3 சப்-டேப்கள்: **`Sample Loop`** (`Forward` / `Ping-Pong` / `Until Release`, `X-Fade`, `L-Tune`, `Count`), **`Grid / Sync`** (`Grid ON`, `Auto/Fix`, `Width`, `BPM`), மற்றும் **`Edit / Tone`** (`REV`, `NORM`, `Fade In/Out` + 13 Per-Zone நாப்கள்).
+   - Live Playhead கோடு + **`Play`** பட்டன், **`TRIM`**, **`Slice -> Keys`**, `Sample Loop` (`Forward` / `Ping-Pong` / `Until Release`, `X-Fade`, `L-Tune`, `Count`), `Grid / Sync`, `Edit / Tone` (`REV`, `NORM`, `Fade In/Out`).
+5. **Kontakt-Style Effects Rack (`Effects` பேனல்):**
+   - **Amplifier & Routing:** `Volume`, `Pan`, `Send`, `Phase Invert`, `L/R Swap`, மற்றும் `Out 1`–`Out 8` Multi-Out Routing.
+   - **3 Racks (ஒவ்வொன்றிலும் 8 `Add FX +` ஸ்லாட்கள்):** **Group Insert FX** (ஒவ்வொரு குரூப்புக்கும் தனித்தனி 8 ஸ்லாட்கள்), **Send FX** (8 ஸ்லாட்கள்), மற்றும் **Main Master FX** (8 ஸ்லாட்கள்).
+   - **3-Band EQ (`EQ 3`):** 9 நாப்கள் (`Freq 1..3`, `BW 1..3`, `Gain 1..3`) + Live Frequency Curve வரைபடம் (`100 Hz – 10 kHz`, `±18 dB`), மேலும் Compressor, Saturation, Filter, Transient, Delay, Reverb, Chorus, Width, Limiter (0% Idle CPU).
+6. **`MAIN` பேஜ்:** Rhythm Sequencer-ல் பேட்டர்னை ஒரே கிளிக்கில் அழிக்க **`Clr`** பட்டன்.
