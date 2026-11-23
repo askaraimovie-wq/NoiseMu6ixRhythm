@@ -37,6 +37,8 @@ NoiseMu6ixRhythmAudioProcessor::NoiseMu6ixRhythmAudioProcessor()
 {
     formatManager.registerBasicFormats();
     heldNotesVel.fill (0.0f);
+    groups.push_back ({ "Group 1", false });
+    selectedGroupIndex = 0;
 }
 
 NoiseMu6ixRhythmAudioProcessor::~NoiseMu6ixRhythmAudioProcessor() = default;
@@ -103,12 +105,46 @@ bool NoiseMu6ixRhythmAudioProcessor::isBusesLayoutSupported (const BusesLayout& 
     return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
 }
 
+int NoiseMu6ixRhythmAudioProcessor::createEmptyGroup()
+{
+    const juce::ScopedLock sl (zoneLock);
+    int nextNum = static_cast<int> (groups.size()) + 1;
+    groups.push_back ({ "Group " + juce::String (nextNum), false });
+    selectedGroupIndex = static_cast<int> (groups.size()) - 1;
+    return selectedGroupIndex;
+}
+
+void NoiseMu6ixRhythmAudioProcessor::deleteGroup (int groupIdx)
+{
+    const juce::ScopedLock sl (zoneLock);
+    if (groups.size() <= 1 || groupIdx < 0 || groupIdx >= static_cast<int> (groups.size()))
+        return;
+
+    // Remove zones belonging to this group and shift higher group indices down
+    for (int i = static_cast<int> (zones.size()) - 1; i >= 0; --i)
+    {
+        if (zones[static_cast<size_t> (i)].groupIndex == groupIdx)
+            deleteZone (i);
+        else if (zones[static_cast<size_t> (i)].groupIndex > groupIdx)
+            zones[static_cast<size_t> (i)].groupIndex--;
+    }
+
+    groups.erase (groups.begin() + groupIdx);
+    selectedGroupIndex = juce::jlimit (0, static_cast<int> (groups.size()) - 1, selectedGroupIndex);
+}
+
 int NoiseMu6ixRhythmAudioProcessor::createEmptyZone (int key)
 {
     const juce::ScopedLock sl (zoneLock);
+    if (groups.empty())
+    {
+        groups.push_back ({ "Group 1", false });
+        selectedGroupIndex = 0;
+    }
     int k = juce::jlimit (0, 120, key);
     SampleZone z;
     z.name = "Key " + juce::MidiMessage::getMidiNoteName (k, true, true, 5);
+    z.groupIndex = juce::jlimit (0, static_cast<int> (groups.size()) - 1, selectedGroupIndex);
     z.lowKey = k;
     z.highKey = k;
     z.rootKey = k;
@@ -189,9 +225,24 @@ void NoiseMu6ixRhythmAudioProcessor::deleteZones (std::vector<int> indices)
         deleteZone (idx);
 }
 
-void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, float velocity)
+bool NoiseMu6ixRhythmAudioProcessor::isZoneAudible (int zoneIdx) const
 {
     if (zoneIdx < 0 || zoneIdx >= static_cast<int> (zones.size()))
+        return false;
+    const auto& z = zones[static_cast<size_t> (zoneIdx)];
+    if (z.groupIndex >= 0 && z.groupIndex < static_cast<int> (groups.size()))
+        if (groups[static_cast<size_t> (z.groupIndex)].muted)
+            return false;
+    if (groupSoloEnabled.load() && z.groupIndex != selectedGroupIndex)
+        return false;
+    if (zoneSoloEnabled.load() && zoneIdx != selectedZoneIndex)
+        return false;
+    return true;
+}
+
+void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, float velocity)
+{
+    if (! isZoneAudible (zoneIdx))
         return;
 
     auto& z = zones[static_cast<size_t> (zoneIdx)];
@@ -318,7 +369,11 @@ void NoiseMu6ixRhythmAudioProcessor::triggerNote (int midiNote, float velocity)
         if (midiNote >= z.lowKey && midiNote <= z.highKey && velInt >= z.lowVel && velInt <= z.highVel)
         {
             startVoice (i, midiNote, velocity);
-            selectedZoneIndex = i;
+            if (selectByMidi.load())
+            {
+                selectedZoneIndex = i;
+                selectedGroupIndex = juce::jlimit (0, static_cast<int> (groups.size()) - 1, z.groupIndex);
+            }
         }
     }
 }
@@ -361,7 +416,11 @@ void NoiseMu6ixRhythmAudioProcessor::uiNoteOn (int midiNote, float velocity)
             const auto& z = zones[static_cast<size_t> (i)];
             if (midiNote >= z.lowKey && midiNote <= z.highKey)
             {
-                selectedZoneIndex = i;
+                if (selectByMidi.load())
+                {
+                    selectedZoneIndex = i;
+                    selectedGroupIndex = juce::jlimit (0, static_cast<int> (groups.size()) - 1, z.groupIndex);
+                }
                 for (const auto& ev : z.seqEvents)
                     if (ev.position < 0.004f)
                         startVoice (i, midiNote, velocity * ev.velocity);
@@ -578,12 +637,22 @@ bool NoiseMu6ixRhythmAudioProcessor::savePresetMn6x (const juce::File& file)
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
     xml->setAttribute ("presetName", currentPresetName);
 
-    auto* zonesXml = xml->createNewChildElement ("ZONES");
     const juce::ScopedLock sl (zoneLock);
+
+    auto* groupsXml = xml->createNewChildElement ("GROUPS");
+    for (const auto& g : groups)
+    {
+        auto* gx = groupsXml->createNewChildElement ("GROUP");
+        gx->setAttribute ("name", g.name);
+        gx->setAttribute ("muted", g.muted ? 1 : 0);
+    }
+
+    auto* zonesXml = xml->createNewChildElement ("ZONES");
     for (const auto& z : zones)
     {
         auto* zx = zonesXml->createNewChildElement ("ZONE");
         zx->setAttribute ("name", z.name);
+        zx->setAttribute ("groupIdx", z.groupIndex);
         zx->setAttribute ("lowKey", z.lowKey);
         zx->setAttribute ("highKey", z.highKey);
         zx->setAttribute ("rootKey", z.rootKey);
@@ -636,6 +705,17 @@ bool NoiseMu6ixRhythmAudioProcessor::loadPresetMn6x (const juce::File& file)
     currentPresetName = xml->getStringAttribute ("presetName", file.getFileNameWithoutExtension());
     currentPresetFile = file;
 
+    if (auto* groupsXml = xml->getChildByName ("GROUPS"))
+    {
+        const juce::ScopedLock sl (zoneLock);
+        groups.clear();
+        for (auto* gx : groupsXml->getChildIterator())
+            groups.push_back ({ gx->getStringAttribute ("name", "Group"), gx->getIntAttribute ("muted", 0) != 0 });
+        if (groups.empty())
+            groups.push_back ({ "Group 1", false });
+        selectedGroupIndex = 0;
+    }
+
     if (auto* zonesXml = xml->getChildByName ("ZONES"))
     {
         {
@@ -649,6 +729,7 @@ bool NoiseMu6ixRhythmAudioProcessor::loadPresetMn6x (const juce::File& file)
                 const juce::ScopedLock sl (zoneLock);
                 auto& z = zones[static_cast<size_t> (idx)];
                 z.name = zx->getStringAttribute ("name", z.name);
+                z.groupIndex = juce::jlimit (0, std::max (0, static_cast<int> (groups.size()) - 1), zx->getIntAttribute ("groupIdx", 0));
                 z.lowKey = zx->getIntAttribute ("lowKey", 60);
                 z.highKey = zx->getIntAttribute ("highKey", 60);
                 z.rootKey = zx->getIntAttribute ("rootKey", 60);

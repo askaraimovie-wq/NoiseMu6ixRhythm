@@ -6,6 +6,7 @@
 #include <vector>
 #include <atomic>
 #include <cmath>
+#include <functional>
 
 // Lightweight CPU-friendly Cytomic TPT SVF Filter
 struct FastSVF
@@ -53,9 +54,16 @@ struct SampleLayer
     double sampleRate = 44100.0;
 };
 
+struct SampleGroup
+{
+    juce::String name { "Group 1" };
+    bool muted = false;
+};
+
 struct SampleZone
 {
     juce::String name { "Sample" };
+    int groupIndex = 0; // Belongs to a SampleGroup (Kontakt-style)
     int lowKey = 60;
     int highKey = 60;
     int rootKey = 60;
@@ -130,7 +138,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "Noise Mu6ix Rhythm v1.0.7"; }
+    const juce::String getName() const override { return "Noise Mu6ix Rhythm v1.0.8"; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -145,6 +153,11 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    // Group management (Kontakt-style)
+    int createEmptyGroup();
+    void deleteGroup (int groupIdx);
+
+    // Zone management
     int createEmptyZone (int key);
     bool addSampleToZone (int zoneIndex, const juce::File& file);
     bool loadSampleIntoNewZone (const juce::File& file, int lowKey, int highKey, int rootKey, int lowVel = 0, int highVel = 127);
@@ -165,8 +178,17 @@ public:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     juce::CriticalSection zoneLock;
+    std::vector<SampleGroup> groups;
+    int selectedGroupIndex = 0;
+
     std::vector<SampleZone> zones;
     int selectedZoneIndex = -1;
+
+    // Kontakt-style Group & Mapping Editor flags
+    std::atomic<bool> editAllGroups { false };
+    std::atomic<bool> groupSoloEnabled { false };
+    std::atomic<bool> zoneSoloEnabled { false };
+    std::atomic<bool> selectByMidi { false };
 
     std::atomic<float> seqPlayheadNorm { 0.0f };
     std::atomic<int> lastPlayedNote { -1 };
@@ -190,6 +212,7 @@ private:
     bool wasTransportPlaying = false;
 
     void startVoice (int zoneIdx, int midiNote, float velocity);
+    bool isZoneAudible (int zoneIdx) const;
     std::vector<RhythmEvent> createDefaultEvents() const;
     bool hasAnyHeldNote() const;
 

@@ -30,21 +30,46 @@ private:
     int pressedNote = -1;
 };
 
-// 10-Octave Key Mapper:
-// - Read-Only on MAIN tab
-// - Full Edit on EDIT tab: NO double-click empty slot, Right-Click ONLY for Root Key,
-//   Marquee Box Multi-Select + Select All + Group Drag, Velocity Grid up to 64
+// Compact Kontakt-Style Group Editor Strip (EDIT tab only)
+class GroupEditorPanel : public juce::Component
+{
+public:
+    GroupEditorPanel (NoiseMu6ixRhythmAudioProcessor& p);
+    void paint (juce::Graphics& g) override;
+    void resized() override;
+    void rebuildGroupButtons();
+
+    std::function<void()> onGroupChanged;
+
+private:
+    NoiseMu6ixRhythmAudioProcessor& processor;
+
+    juce::Label titleLabel;
+    juce::ToggleButton editAllGroupsBtn { "Edit All Groups" };
+    juce::ToggleButton groupSoloBtn { "Group Solo" };
+    juce::ToggleButton selectByMidiBtn { "Select by MIDI" };
+    juce::TextButton createGroupBtn { "+ Empty Group" };
+    juce::TextButton deleteGroupBtn { "Del Grp" };
+
+    juce::Viewport groupListViewport;
+    juce::Component groupListContent;
+    juce::OwnedArray<juce::TextButton> groupBtns;
+};
+
+// 10-Octave Key Mapper: Read-Only on MAIN tab; Full Edit + Selected Groups Only + Zone Solo + Multi-Select on EDIT tab
 class KeyMapperComponent : public juce::Component
 {
 public:
     KeyMapperComponent (NoiseMu6ixRhythmAudioProcessor& p);
     void setReadOnly (bool ro) { readOnly = ro; repaint(); }
     void setVelocityGridDivisions (int divs) { velGridDivs = divs; repaint(); }
+    void setSelectedGroupsOnly (bool sgo) { selectedGroupsOnly = sgo; repaint(); }
     bool isReadOnly() const { return readOnly; }
 
     void selectAllZones();
     void clearSelection();
     void selectSingleZone (int idx);
+    void autoGridSelectedZones();
     const std::set<int>& getSelectedZoneIndices() const { return selectedZoneIndices; }
 
     void paint (juce::Graphics& g) override;
@@ -61,11 +86,11 @@ private:
     static constexpr int numKeys = 121;
 
     bool readOnly = true;
-    int velGridDivs = 4; // 0 = Free, 2, 4, 8, 16, 32, 64
+    bool selectedGroupsOnly = true;
+    int velGridDivs = 4;
 
     std::set<int> selectedZoneIndices;
 
-    // Marquee box selection state
     bool isMarqueeDragging = false;
     juce::Point<float> marqueeStart;
     juce::Point<float> marqueeCurrent;
@@ -84,6 +109,7 @@ private:
     std::vector<ZoneKeySnapshot> dragSnapshots;
     int pressedKey = -1;
 
+    bool isZoneVisible (const SampleZone& z) const;
     juce::Rectangle<int> getGridArea() const;
     juce::Rectangle<int> getKeyboardArea() const;
     juce::Rectangle<float> getZoneRect (const SampleZone& z, juce::Rectangle<int> gridArea) const;
@@ -162,7 +188,7 @@ private:
     juce::ListBox libraryList;
     juce::Array<juce::File> libraryFiles;
 
-    // Top Bar: Empty editable preset box + SAVE / SAVE AS
+    // Top Bar
     juce::TextEditor presetNameBox;
     juce::TextButton saveBtn { "SAVE" };
     juce::TextButton saveAsBtn { "SAVE AS" };
@@ -179,17 +205,23 @@ private:
     juce::ComboBox gridBox;
     juce::ToggleButton seqLoopBtn { "LOOP" };
 
-    // EDIT Tab Scrollable Container (Extra Large Key Map Editor + Sample Wave Editor)
+    // EDIT Tab Scrollable Container: Compact Group Editor + Mapping Editor + Sample Wave Editor
     juce::Viewport editViewport;
     juce::Component editContent;
+
+    GroupEditorPanel groupPanel;
 
     juce::Label editKmLabel;
     juce::ToggleButton frrBtn { "FRR" };
     juce::ToggleButton fvlBtn { "FVL" };
     juce::ToggleButton pitchTrackBtn { "PITCH" };
     juce::TextButton selectAllZonesBtn { "ALL" };
+    juce::ToggleButton zoneSoloBtn { "Zone Solo" };
+    juce::ToggleButton selGroupsOnlyBtn { "Sel Grp Only" };
+    juce::TextButton autoGridBtn { "Auto Grid" };
     juce::ComboBox velGridBox;
     juce::ComboBox zoneColourBox;
+    juce::Label zoneInfoBar;
     KeyMapperComponent editKeyMapper;
 
     juce::Label editWaveLabel;

@@ -97,21 +97,144 @@ void ColorPianoStrip::mouseUp (const juce::MouseEvent&)
     }
 }
 
+// ---------------- Compact Kontakt-Style GroupEditorPanel ----------------
+GroupEditorPanel::GroupEditorPanel (NoiseMu6ixRhythmAudioProcessor& p) : processor (p)
+{
+    titleLabel.setText ("GROUP EDITOR", juce::dontSendNotification);
+    titleLabel.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    titleLabel.setColour (juce::Label::textColourId, juce::Colour (0xff9aa8bf));
+    addAndMakeVisible (titleLabel);
+
+    addAndMakeVisible (editAllGroupsBtn);
+    editAllGroupsBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xffee6c4d));
+    editAllGroupsBtn.onClick = [this]()
+    {
+        processor.editAllGroups.store (editAllGroupsBtn.getToggleState());
+        if (onGroupChanged) onGroupChanged();
+    };
+
+    addAndMakeVisible (groupSoloBtn);
+    groupSoloBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xffe8a138));
+    groupSoloBtn.onClick = [this]()
+    {
+        processor.groupSoloEnabled.store (groupSoloBtn.getToggleState());
+        if (onGroupChanged) onGroupChanged();
+    };
+
+    addAndMakeVisible (selectByMidiBtn);
+    selectByMidiBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xff4ca3ff));
+    selectByMidiBtn.onClick = [this]()
+    {
+        processor.selectByMidi.store (selectByMidiBtn.getToggleState());
+    };
+
+    addAndMakeVisible (createGroupBtn);
+    createGroupBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2b3c54));
+    createGroupBtn.onClick = [this]()
+    {
+        processor.createEmptyGroup();
+        rebuildGroupButtons();
+        if (onGroupChanged) onGroupChanged();
+    };
+
+    addAndMakeVisible (deleteGroupBtn);
+    deleteGroupBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff592836));
+    deleteGroupBtn.onClick = [this]()
+    {
+        processor.deleteGroup (processor.selectedGroupIndex);
+        rebuildGroupButtons();
+        if (onGroupChanged) onGroupChanged();
+    };
+
+    addAndMakeVisible (groupListViewport);
+    groupListViewport.setViewedComponent (&groupListContent, false);
+    groupListViewport.setScrollBarsShown (false, true);
+
+    rebuildGroupButtons();
+}
+
+void GroupEditorPanel::rebuildGroupButtons()
+{
+    groupBtns.clear (true);
+    const juce::ScopedLock sl (processor.zoneLock);
+    int x = 2;
+    int btnW = 92;
+    int btnH = 22;
+
+    for (int i = 0; i < static_cast<int> (processor.groups.size()); ++i)
+    {
+        auto* btn = new juce::TextButton (processor.groups[static_cast<size_t> (i)].name);
+        bool isSel = (i == processor.selectedGroupIndex);
+        btn->setColour (juce::TextButton::buttonColourId, isSel ? juce::Colour (0xff4ca3ff) : juce::Colour (0xff232b38));
+        btn->setColour (juce::TextButton::textColourOffId, isSel ? juce::Colours::black : juce::Colours::lightgrey);
+        btn->onClick = [this, i]()
+        {
+            {
+                const juce::ScopedLock sl2 (processor.zoneLock);
+                processor.selectedGroupIndex = i;
+            }
+            rebuildGroupButtons();
+            if (onGroupChanged) onGroupChanged();
+        };
+        groupListContent.addAndMakeVisible (btn);
+        btn->setBounds (x, 2, btnW, btnH);
+        groupBtns.add (btn);
+        x += btnW + 4;
+    }
+    groupListContent.setSize (std::max (groupListViewport.getWidth(), x + 4), 26);
+    repaint();
+}
+
+void GroupEditorPanel::paint (juce::Graphics& g)
+{
+    g.fillAll (juce::Colour (0xff171d27));
+    g.setColour (juce::Colour (0xff2e3748));
+    g.drawRect (getLocalBounds(), 1);
+}
+
+void GroupEditorPanel::resized()
+{
+    auto r = getLocalBounds().reduced (4);
+    auto topBar = r.removeFromTop (24);
+    titleLabel.setBounds (topBar.removeFromLeft (92));
+    editAllGroupsBtn.setBounds (topBar.removeFromLeft (108).reduced (1));
+    groupSoloBtn.setBounds (topBar.removeFromLeft (86).reduced (1));
+    selectByMidiBtn.setBounds (topBar.removeFromLeft (104).reduced (1));
+    deleteGroupBtn.setBounds (topBar.removeFromRight (58).reduced (2, 1));
+    createGroupBtn.setBounds (topBar.removeFromRight (102).reduced (2, 1));
+
+    r.removeFromTop (3);
+    groupListViewport.setBounds (r);
+    rebuildGroupButtons();
+}
+
 // ---------------- 10-Octave KeyMapperComponent ----------------
 KeyMapperComponent::KeyMapperComponent (NoiseMu6ixRhythmAudioProcessor& p) : processor (p) {}
+
+bool KeyMapperComponent::isZoneVisible (const SampleZone& z) const
+{
+    if (readOnly)
+        return true;
+    if (selectedGroupsOnly && ! processor.editAllGroups.load())
+        return z.groupIndex == processor.selectedGroupIndex;
+    return true;
+}
 
 void KeyMapperComponent::sanitizeSelection()
 {
     int n = static_cast<int> (processor.zones.size());
     for (auto it = selectedZoneIndices.begin(); it != selectedZoneIndices.end(); )
     {
-        if (*it < 0 || *it >= n)
+        if (*it < 0 || *it >= n || ! isZoneVisible (processor.zones[static_cast<size_t> (*it)]))
             it = selectedZoneIndices.erase (it);
         else
             ++it;
     }
     if (selectedZoneIndices.empty() && processor.selectedZoneIndex >= 0 && processor.selectedZoneIndex < n)
-        selectedZoneIndices.insert (processor.selectedZoneIndex);
+    {
+        if (isZoneVisible (processor.zones[static_cast<size_t> (processor.selectedZoneIndex)]))
+            selectedZoneIndices.insert (processor.selectedZoneIndex);
+    }
 }
 
 void KeyMapperComponent::selectAllZones()
@@ -120,9 +243,13 @@ void KeyMapperComponent::selectAllZones()
     selectedZoneIndices.clear();
     int n = static_cast<int> (processor.zones.size());
     for (int i = 0; i < n; ++i)
-        selectedZoneIndices.insert (i);
-    if (n > 0)
-        processor.selectedZoneIndex = n - 1;
+    {
+        if (isZoneVisible (processor.zones[static_cast<size_t> (i)]))
+        {
+            selectedZoneIndices.insert (i);
+            processor.selectedZoneIndex = i;
+        }
+    }
     if (onSelectionChanged) onSelectionChanged();
     repaint();
 }
@@ -138,6 +265,36 @@ void KeyMapperComponent::selectSingleZone (int idx)
     selectedZoneIndices.clear();
     if (idx >= 0)
         selectedZoneIndices.insert (idx);
+    repaint();
+}
+
+void KeyMapperComponent::autoGridSelectedZones()
+{
+    const juce::ScopedLock sl (processor.zoneLock);
+    sanitizeSelection();
+    if (selectedZoneIndices.empty()) return;
+
+    // Evenly distribute selected zones across velocity layers (0..127)
+    int count = static_cast<int> (selectedZoneIndices.size());
+    if (count == 1)
+    {
+        auto& z = processor.zones[static_cast<size_t> (*selectedZoneIndices.begin())];
+        z.lowVel = 0;
+        z.highVel = 127;
+    }
+    else
+    {
+        int i = 0;
+        for (int idx : selectedZoneIndices)
+        {
+            auto& z = processor.zones[static_cast<size_t> (idx)];
+            z.lowVel = static_cast<int> (std::round ((i * 127.0f) / count));
+            z.highVel = static_cast<int> (std::round (((i + 1) * 127.0f) / count));
+            if (i > 0 && z.lowVel < 127) z.lowVel += 1;
+            ++i;
+        }
+    }
+    if (onSelectionChanged) onSelectionChanged();
     repaint();
 }
 
@@ -181,7 +338,7 @@ juce::Rectangle<float> KeyMapperComponent::getZoneRect (const SampleZone& z, juc
     float x2 = gridArea.getX() + ((z.highKey - startNote + 1) / static_cast<float> (numKeys)) * gridArea.getWidth();
     float y1 = gridArea.getBottom() - (z.highVel / 127.0f) * gridArea.getHeight();
     float y2 = gridArea.getBottom() - (z.lowVel / 127.0f) * gridArea.getHeight();
-    return { x1, y1, std::max (8.0f, x2 - x1), std::max (8.0f, y2 - y1) };
+    return { x1, y1, std::max (8.0f, x2 - x1), std::max (10.0f, y2 - y1) };
 }
 
 void KeyMapperComponent::paint (juce::Graphics& g)
@@ -194,7 +351,6 @@ void KeyMapperComponent::paint (juce::Graphics& g)
     auto gridArea = getGridArea();
     auto keyArea = getKeyboardArea();
 
-    // Velocity Axis & Horizontal Grid Lines (supports up to 64 divisions cleanly)
     int divs = readOnly ? 4 : (velGridDivs > 0 ? velGridDivs : 4);
     int labelStep = (divs <= 8) ? 1 : (divs <= 16 ? 2 : (divs <= 32 ? 4 : 8));
     int majorStep = (divs <= 8) ? 1 : (divs / 8);
@@ -217,7 +373,6 @@ void KeyMapperComponent::paint (juce::Graphics& g)
         }
     }
 
-    // Octave vertical grid lines
     float keyW = gridArea.getWidth() / static_cast<float> (numKeys);
     g.setColour (juce::Colour (0xff232b38));
     for (int i = 0; i < numKeys; ++i)
@@ -229,24 +384,33 @@ void KeyMapperComponent::paint (juce::Graphics& g)
     const juce::ScopedLock sl (processor.zoneLock);
     sanitizeSelection();
 
-    if (processor.zones.empty())
+    int visibleCount = 0;
+    for (const auto& z : processor.zones)
+        if (isZoneVisible (z)) ++visibleCount;
+
+    if (visibleCount == 0)
     {
         g.setColour (juce::Colour (0xff78849b));
         g.setFont (11.5f);
         if (readOnly)
             g.drawText ("Key Map Overview (Switch to EDIT tab to add or edit samples)", gridArea, juce::Justification::centred);
         else
-            g.drawText ("Drag & Drop WAV/AIFF onto any key | Drag empty space to box-select multiple zones | Right-Click piano key to set Root Key",
+            g.drawText ("Drag & Drop WAV/AIFF onto any key | Drag empty space to box-select | Right-Click piano key to set Root Key",
                         gridArea, juce::Justification::centred);
     }
 
     int selectedRootKey = -1;
     if (processor.selectedZoneIndex >= 0 && processor.selectedZoneIndex < static_cast<int> (processor.zones.size()))
-        selectedRootKey = processor.zones[static_cast<size_t> (processor.selectedZoneIndex)].rootKey;
+    {
+        if (isZoneVisible (processor.zones[static_cast<size_t> (processor.selectedZoneIndex)]))
+            selectedRootKey = processor.zones[static_cast<size_t> (processor.selectedZoneIndex)].rootKey;
+    }
 
     for (int i = 0; i < static_cast<int> (processor.zones.size()); ++i)
     {
         const auto& z = processor.zones[static_cast<size_t> (i)];
+        if (! isZoneVisible (z)) continue;
+
         auto r = getZoneRect (z, gridArea);
         bool isSelected = (! readOnly && selectedZoneIndices.count (i) > 0)
                        || (readOnly && i == processor.selectedZoneIndex);
@@ -267,7 +431,6 @@ void KeyMapperComponent::paint (juce::Graphics& g)
         g.drawText (label, r.reduced (3.0f, 1.0f), juce::Justification::topLeft, true);
     }
 
-    // Draw Marquee Box Selection rectangle if dragging
     if (! readOnly && isMarqueeDragging)
     {
         auto mr = juce::Rectangle<float>::leftTopRightBottom (
@@ -281,7 +444,6 @@ void KeyMapperComponent::paint (juce::Graphics& g)
         g.drawRect (mr, 1.2f);
     }
 
-    // Draw 10-octave horizontal keyboard
     int activeNote = processor.lastPlayedNote.load();
     for (int i = 0; i < numKeys; ++i)
     {
@@ -294,7 +456,7 @@ void KeyMapperComponent::paint (juce::Graphics& g)
         bool isMapped = false;
         for (const auto& z : processor.zones)
         {
-            if (note >= z.lowKey && note <= z.highKey)
+            if (isZoneVisible (z) && note >= z.lowKey && note <= z.highKey)
             {
                 mappedCol = z.colour;
                 isMapped = true;
@@ -304,7 +466,7 @@ void KeyMapperComponent::paint (juce::Graphics& g)
         if (note == pressedKey || note == activeNote)
             g.setColour (juce::Colours::white);
         else if (! readOnly && note == selectedRootKey)
-            g.setColour (juce::Colour (0xffffd32a)); // Gold Root Key indicator
+            g.setColour (juce::Colour (0xffffd32a));
         else if (isMapped)
             g.setColour (isBlack ? mappedCol.darker (0.35f) : mappedCol);
         else
@@ -336,12 +498,11 @@ void KeyMapperComponent::mouseDown (const juce::MouseEvent& e)
     auto gridArea = getGridArea();
     auto keyArea = getKeyboardArea();
 
-    // Piano strip interaction
     if (keyArea.contains (e.getPosition()))
     {
         int note = noteAtX (e.x);
 
-        // STRICTLY Right-Click ONLY sets Root Key (Left-Click ONLY plays the note!)
+        // STRICTLY Right-Click ONLY sets Root Key
         if (! readOnly && e.mods.isRightButtonDown())
         {
             const juce::ScopedLock sl (processor.zoneLock);
@@ -361,7 +522,6 @@ void KeyMapperComponent::mouseDown (const juce::MouseEvent& e)
             return;
         }
 
-        // Left-Click -> audition note only
         pressedKey = note;
         processor.uiNoteOn (note, 0.9f);
         if (onSelectionChanged) onSelectionChanged();
@@ -378,6 +538,8 @@ void KeyMapperComponent::mouseDown (const juce::MouseEvent& e)
 
     for (int i = static_cast<int> (processor.zones.size()) - 1; i >= 0; --i)
     {
+        if (! isZoneVisible (processor.zones[static_cast<size_t> (i)])) continue;
+
         auto r = getZoneRect (processor.zones[static_cast<size_t> (i)], gridArea);
         if (r.expanded (4.0f).contains (e.position))
         {
@@ -447,7 +609,6 @@ void KeyMapperComponent::mouseDown (const juce::MouseEvent& e)
         }
     }
 
-    // Clicked on empty space inside grid -> Start Marquee Box Multi-Selection!
     if (! readOnly && ! e.mods.isRightButtonDown() && gridArea.contains (e.getPosition()))
     {
         if (! e.mods.isShiftDown() && ! e.mods.isCommandDown())
@@ -465,7 +626,6 @@ void KeyMapperComponent::mouseDrag (const juce::MouseEvent& e)
 
     auto gridArea = getGridArea();
 
-    // Marquee Box-Select Drag
     if (isMarqueeDragging)
     {
         marqueeCurrent = e.position;
@@ -479,6 +639,7 @@ void KeyMapperComponent::mouseDrag (const juce::MouseEvent& e)
         selectedZoneIndices.clear();
         for (int i = 0; i < static_cast<int> (processor.zones.size()); ++i)
         {
+            if (! isZoneVisible (processor.zones[static_cast<size_t> (i)])) continue;
             auto zr = getZoneRect (processor.zones[static_cast<size_t> (i)], gridArea);
             if (mr.intersects (zr))
             {
@@ -503,7 +664,6 @@ void KeyMapperComponent::mouseDrag (const juce::MouseEvent& e)
 
     if (dragMode == DragMode::Move)
     {
-        // Clamp deltaKey so NO selected zone goes out of 0..120 bounds
         int minDelta = -120;
         int maxDelta = 120;
         for (const auto& s : dragSnapshots)
@@ -555,6 +715,7 @@ void KeyMapperComponent::mouseDrag (const juce::MouseEvent& e)
         auto& z = processor.zones[static_cast<size_t> (dragZoneIdx)];
         z.lowVel = juce::jlimit (0, z.highVel - 2, curVel);
     }
+    if (onSelectionChanged) onSelectionChanged();
     repaint();
 }
 
@@ -836,7 +997,7 @@ void RhythmSequencerComponent::mouseUp (const juce::MouseEvent&)
 // ---------------- MainPluginView ----------------
 MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function<void(float)> onScaleSelected)
     : audioProcessor (p), scaleCallback (std::move (onScaleSelected)),
-      mainKeyMapper (p), seqComp (p), editKeyMapper (p), waveEditor (p), bottomPiano (p)
+      mainKeyMapper (p), seqComp (p), groupPanel (p), editKeyMapper (p), waveEditor (p), bottomPiano (p)
 {
     addAndMakeVisible (titleScaleBtn);
     titleScaleBtn.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
@@ -969,12 +1130,19 @@ MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function
     editViewport.setViewedComponent (&editContent, false);
     editViewport.setScrollBarsShown (true, false);
 
-    editKmLabel.setText ("KEY MAP EDITOR", juce::dontSendNotification);
-    editKmLabel.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+    // Compact Kontakt-style Group Editor above Mapping Editor
+    editContent.addAndMakeVisible (groupPanel);
+    groupPanel.onGroupChanged = [this]()
+    {
+        editKeyMapper.repaint();
+        syncPerZoneControls();
+    };
+
+    editKmLabel.setText ("MAPPING EDITOR", juce::dontSendNotification);
+    editKmLabel.setFont (juce::FontOptions (10.0f, juce::Font::bold));
     editKmLabel.setColour (juce::Label::textColourId, juce::Colour (0xff9aa8bf));
     editContent.addAndMakeVisible (editKmLabel);
 
-    // Top Header Controls ABOVE Key Map Editor
     editContent.addAndMakeVisible (frrBtn);
     editContent.addAndMakeVisible (fvlBtn);
     editContent.addAndMakeVisible (pitchTrackBtn);
@@ -985,21 +1153,40 @@ MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function
     fvlAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "fvl", fvlBtn);
     pitchTrackAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "pitchTrack", pitchTrackBtn);
 
-    // Select ALL Zones button (also works with Ctrl+A or mouse drag marquee box!)
     editContent.addAndMakeVisible (selectAllZonesBtn);
     selectAllZonesBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2b384e));
-    selectAllZonesBtn.setTooltip ("Select all mapped zones to move them together (or drag a box in the grid)");
     selectAllZonesBtn.onClick = [this]() { editKeyMapper.selectAllZones(); };
 
-    // Velocity Grid Selector (includes 16, 32, 64!)
+    // Kontakt-style Mapping Editor Header Controls: Zone Solo, Selected Groups Only, Auto Grid
+    editContent.addAndMakeVisible (zoneSoloBtn);
+    zoneSoloBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xffe8a138));
+    zoneSoloBtn.onClick = [this]()
+    {
+        audioProcessor.zoneSoloEnabled.store (zoneSoloBtn.getToggleState());
+    };
+
+    editContent.addAndMakeVisible (selGroupsOnlyBtn);
+    selGroupsOnlyBtn.setToggleState (true, juce::dontSendNotification);
+    selGroupsOnlyBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xff4cc98f));
+    selGroupsOnlyBtn.onClick = [this]()
+    {
+        editKeyMapper.setSelectedGroupsOnly (selGroupsOnlyBtn.getToggleState());
+    };
+
+    editContent.addAndMakeVisible (autoGridBtn);
+    autoGridBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2b3c54));
+    autoGridBtn.setTooltip ("Auto-distribute selected zones evenly across velocity layers (0-127)");
+    autoGridBtn.onClick = [this]() { editKeyMapper.autoGridSelectedZones(); };
+
+    // Velocity Grid Selector
     editContent.addAndMakeVisible (velGridBox);
-    velGridBox.addItem ("Vel Grid: Free", 1);
-    velGridBox.addItem ("Vel Grid: 2", 2);
-    velGridBox.addItem ("Vel Grid: 4", 3);
-    velGridBox.addItem ("Vel Grid: 8", 4);
-    velGridBox.addItem ("Vel Grid: 16", 5);
-    velGridBox.addItem ("Vel Grid: 32", 6);
-    velGridBox.addItem ("Vel Grid: 64", 7);
+    velGridBox.addItem ("Vel: Free", 1);
+    velGridBox.addItem ("Vel: 2", 2);
+    velGridBox.addItem ("Vel: 4", 3);
+    velGridBox.addItem ("Vel: 8", 4);
+    velGridBox.addItem ("Vel: 16", 5);
+    velGridBox.addItem ("Vel: 32", 6);
+    velGridBox.addItem ("Vel: 64", 7);
     velGridBox.setSelectedId (3, juce::dontSendNotification);
     velGridBox.onChange = [this]()
     {
@@ -1008,7 +1195,7 @@ MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function
         editKeyMapper.setVelocityGridDivisions (divs);
     };
 
-    // Zone Color Selector (applies to ALL selected zones!)
+    // Zone Color Selector
     editContent.addAndMakeVisible (zoneColourBox);
     for (int c = 0; c < NoiseMu6ixRhythmAudioProcessor::numPaletteColours; ++c)
         zoneColourBox.addItem (NoiseMu6ixRhythmAudioProcessor::getPaletteColourName (c), c + 1);
@@ -1042,7 +1229,15 @@ MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function
         }
     };
 
+    // Kontakt-style Zone Info Strip (Key Range | Vel Range | Root Key | Sample)
+    editContent.addAndMakeVisible (zoneInfoBar);
+    zoneInfoBar.setFont (juce::FontOptions (10.0f));
+    zoneInfoBar.setColour (juce::Label::backgroundColourId, juce::Colour (0xff131822));
+    zoneInfoBar.setColour (juce::Label::textColourId, juce::Colour (0xffb8c5db));
+    zoneInfoBar.setText ("Key Range: -   |   Vel Range: -   |   Root Key: -   |   Sample: (none selected)", juce::dontSendNotification);
+
     editKeyMapper.setReadOnly (false);
+    editKeyMapper.setSelectedGroupsOnly (true);
     editKeyMapper.setVelocityGridDivisions (4);
     editKeyMapper.onSelectionChanged = [this]() { syncPerZoneControls(); };
     editContent.addAndMakeVisible (editKeyMapper);
@@ -1162,6 +1357,7 @@ void MainPluginView::setActiveTab (ActiveTab tab)
     seqLoopBtn.setVisible (isMain);
 
     editViewport.setVisible (isEdit);
+    if (isEdit) groupPanel.rebuildGroupButtons();
 
     resized();
     repaint();
@@ -1187,6 +1383,7 @@ void MainPluginView::syncPerZoneControls()
         realRRBtn.setToggleState (false, juce::dontSendNotification);
         sampleLoopBtn.setToggleState (false, juce::dontSendNotification);
         zoneColourBox.setSelectedId (1, juce::dontSendNotification);
+        zoneInfoBar.setText ("Key Range: -   |   Vel Range: -   |   Root Key: -   |   Sample: (none selected)", juce::dontSendNotification);
         return;
     }
 
@@ -1196,6 +1393,17 @@ void MainPluginView::syncPerZoneControls()
 
     if (! z.layers.empty())
         trackSelectBox.setSelectedId (juce::jlimit (0, static_cast<int> (z.layers.size()) - 1, z.selectedLayerIndex) + 1, juce::dontSendNotification);
+
+    juce::String grpName = (z.groupIndex >= 0 && z.groupIndex < static_cast<int> (audioProcessor.groups.size()))
+                         ? audioProcessor.groups[static_cast<size_t> (z.groupIndex)].name : "Group 1";
+    zoneInfoBar.setText (
+        "Group: " + grpName
+        + "   |   Key: " + juce::MidiMessage::getMidiNoteName (z.lowKey, true, true, 5)
+        + " - " + juce::MidiMessage::getMidiNoteName (z.highKey, true, true, 5)
+        + "   |   Vel: " + juce::String (z.lowVel) + " - " + juce::String (z.highVel)
+        + "   |   Root: " + juce::MidiMessage::getMidiNoteName (z.rootKey, true, true, 5)
+        + "   |   Sample: " + z.name,
+        juce::dontSendNotification);
 
     zoneColourBox.setSelectedId (z.colourIndex + 1, juce::dontSendNotification);
     realRRBtn.setToggleState (z.realRREnabled, juce::dontSendNotification);
@@ -1282,6 +1490,7 @@ void MainPluginView::listBoxItemDoubleClicked (int row, const juce::MouseEvent&)
     {
         audioProcessor.loadPresetMn6x (f);
         presetNameBox.setText (audioProcessor.currentPresetName, juce::dontSendNotification);
+        groupPanel.rebuildGroupButtons();
     }
     else
     {
@@ -1304,7 +1513,6 @@ void MainPluginView::handleFilesDropped (const juce::StringArray& files, int loc
 
     auto editPos = editContent.getLocalPoint (this, juce::Point<int> (localX, localY));
 
-    // Drop on Wave Editor -> adds Round Robin sample(s) to selected zone (creates zone on C5/60 only if none exists)
     if (activeTab == ActiveTab::Edit && waveEditor.getBounds().contains (editPos))
     {
         int targetZone = audioProcessor.selectedZoneIndex;
@@ -1315,6 +1523,7 @@ void MainPluginView::handleFilesDropped (const juce::StringArray& files, int loc
             {
                 audioProcessor.loadPresetMn6x (f);
                 presetNameBox.setText (audioProcessor.currentPresetName, juce::dontSendNotification);
+                groupPanel.rebuildGroupButtons();
             }
             else
             {
@@ -1335,7 +1544,6 @@ void MainPluginView::handleFilesDropped (const juce::StringArray& files, int loc
         return;
     }
 
-    // Drop on Key Map Editor -> creates new zone(s) ONLY when sample is dropped!
     int targetKey = 60 + static_cast<int> (audioProcessor.zones.size());
     if (activeTab == ActiveTab::Edit && editKeyMapper.getBounds().contains (editPos))
         targetKey = juce::jlimit (0, 120, editKeyMapper.noteAtX (editPos.x - editKeyMapper.getX()));
@@ -1348,6 +1556,7 @@ void MainPluginView::handleFilesDropped (const juce::StringArray& files, int loc
         {
             audioProcessor.loadPresetMn6x (f);
             presetNameBox.setText (audioProcessor.currentPresetName, juce::dontSendNotification);
+            groupPanel.rebuildGroupButtons();
         }
         else if (activeTab == ActiveTab::Edit)
         {
@@ -1375,26 +1584,39 @@ void MainPluginView::repaintDynamicAreas()
 void MainPluginView::layoutEditContent (int viewportWidth)
 {
     int contentW = std::max (600, viewportWidth - 14);
-    int totalH = 720; // Extra spacious scrollable EDIT view!
+    int totalH = 825; // Scrollable EDIT tab: Compact Group Editor + Big Mapping Editor + Big Wave Editor
     editContent.setSize (contentW, totalH);
 
     auto r = juce::Rectangle<int> (0, 0, contentW, totalH).reduced (4);
 
-    // Top Header Bar ABOVE Key Map Editor
-    auto kmTopBar = r.removeFromTop (26);
-    editKmLabel.setBounds (kmTopBar.removeFromLeft (106));
-    frrBtn.setBounds (kmTopBar.removeFromLeft (48).reduced (1));
-    fvlBtn.setBounds (kmTopBar.removeFromLeft (48).reduced (1));
-    pitchTrackBtn.setBounds (kmTopBar.removeFromLeft (60).reduced (1));
-    selectAllZonesBtn.setBounds (kmTopBar.removeFromLeft (44).reduced (2, 1));
-    zoneColourBox.setBounds (kmTopBar.removeFromRight (118).reduced (2, 1));
-    velGridBox.setBounds (kmTopBar.removeFromRight (112).reduced (2, 1));
+    // 1. Compact Kontakt-Style Group Editor (62px tall!)
+    groupPanel.setBounds (r.removeFromTop (62));
+    r.removeFromTop (6);
 
-    // EXTRA BIG Full-Width Key Map Editor (345px tall!)
+    // 2. Mapping Editor Header Row 1: Title + FRR/FVL/PITCH/ALL + Zone Solo / Sel Grp Only / Auto Grid
+    auto kmRow1 = r.removeFromTop (24);
+    editKmLabel.setBounds (kmRow1.removeFromLeft (102));
+    frrBtn.setBounds (kmRow1.removeFromLeft (46).reduced (1));
+    fvlBtn.setBounds (kmRow1.removeFromLeft (46).reduced (1));
+    pitchTrackBtn.setBounds (kmRow1.removeFromLeft (58).reduced (1));
+    selectAllZonesBtn.setBounds (kmRow1.removeFromLeft (38).reduced (1));
+
+    autoGridBtn.setBounds (kmRow1.removeFromRight (68).reduced (2, 1));
+    selGroupsOnlyBtn.setBounds (kmRow1.removeFromRight (94).reduced (1));
+    zoneSoloBtn.setBounds (kmRow1.removeFromRight (80).reduced (1));
+
+    // Mapping Editor Header Row 2: Zone Info Strip + Vel Grid + Color
+    r.removeFromTop (2);
+    auto kmRow2 = r.removeFromTop (22);
+    zoneColourBox.setBounds (kmRow2.removeFromRight (108).reduced (2, 0));
+    velGridBox.setBounds (kmRow2.removeFromRight (86).reduced (2, 0));
+    zoneInfoBar.setBounds (kmRow2.reduced (2, 1));
+
+    // 3. BIG Full-Width Key Map Editor (340px tall)
     r.removeFromTop (4);
-    editKeyMapper.setBounds (r.removeFromTop (345));
+    editKeyMapper.setBounds (r.removeFromTop (340));
 
-    // Sample Wave Editor Header
+    // 4. Sample Wave Editor Header + Display + 13 Knobs
     r.removeFromTop (14);
     auto waveHeader = r.removeFromTop (24);
     editWaveLabel.setBounds (waveHeader.removeFromLeft (150));
@@ -1402,11 +1624,9 @@ void MainPluginView::layoutEditContent (int viewportWidth)
     realRRBtn.setBounds (waveHeader.removeFromRight (52));
     trackSelectBox.setBounds (waveHeader.removeFromRight (210).reduced (4, 1));
 
-    // EXTRA BIG Sample Wave Editor Display (200px tall!)
     r.removeFromTop (4);
     waveEditor.setBounds (r.removeFromTop (200));
 
-    // Wave Editor 13 Per-Zone Knobs
     r.removeFromTop (8);
     auto knobRow = r.removeFromTop (76);
     LabeledKnob* waveKnobs[] = { &startKnob, &endKnob, &loopStartKnob, &loopEndKnob, &pitchKnob, &panKnob, &volKnob,
@@ -1419,10 +1639,10 @@ void MainPluginView::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colour (0xff1c222d));
 
-    // Version v1.0.7 in bottom-right corner
+    // Version v1.0.8 in bottom-right corner
     g.setColour (juce::Colour (0xff6e7b91));
     g.setFont (10.0f);
-    g.drawText ("v1.0.7", getWidth() - 56, getHeight() - 15, 48, 13, juce::Justification::centredRight);
+    g.drawText ("v1.0.8", getWidth() - 56, getHeight() - 15, 48, 13, juce::Justification::centredRight);
 
     g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
     g.setColour (juce::Colour (0xff9aa8bf));
