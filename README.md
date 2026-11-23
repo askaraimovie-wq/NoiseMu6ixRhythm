@@ -1,9 +1,9 @@
-# Noise Mu6ix Rhythm v1.0.1 (VST3)
+# Noise Mu6ix Rhythm v1.0.1 (VST3) — Updated Build
 
-## GitHub Actions மூலம் .vst3 ஃபைல் உருவாக்கும் வழிமுறை:
-1. GitHub-ல் ஒரு புதிய Repository உருவாக்குங்கள் (எ.கா: `NoiseMu6ixRhythm`).
-2. இந்த ZIP ஃபைலில் உள்ள அனைத்து ஃபைல்களையும் (`CMakeLists.txt`, `Source/`, `.github/`) அந்த Repository-ல் Upload செய்யுங்கள்.
-3. மேலே உள்ள **Actions** டேப்பை கிளிக் செய்யுங்கள்.
-4. `Build Noise Mu6ix Rhythm VST3` தானாகவே ரன் ஆகும் (2–4 நிமிடங்கள் ஆகும்).
-5. பச்சை டிக் (Green Checkmark) வந்ததும், அதை கிளிக் செய்து கீழே உள்ள **Artifacts** பகுதியில் இருந்து `Noise-Mu6ix-Rhythm-v1.0.1-Windows-VST3` ஃபைலை டவுன்லோட் செய்யுங்கள்.
-6. அந்த `.vst3` ஃபைலை `C:\Program Files\Common Files\VST3\` ஃபோல்டரில் போட்டு FL Studio-ல் Scan பண்ணி யூஸ் பண்ணலாம்!
+## மாற்றங்கள்:
+- **Title:** NOISE MU6IX RHYTHM (v1.0.1 கீழ் வலது கார்னரில்).
+- **Preset Name & Save:** Preset பெயரை மேலேயே டைப் செய்து எடிட் செய்யலாம்; `SAVE` & `SAVE AS` பட்டன்கள்.
+- **Key Mapper:** சாம்பிளை எந்த கீ-யில் Drag & Drop செய்கிறீர்களோ அந்தக் கீ-யில் மட்டும் மேப் ஆகும். ஜோனின் இடது/வலது/மேல்/கீழ் ஓரங்களை இழுத்து Key Range மற்றும் Velocity-ஐ அட்ஜஸ்ட் செய்யலாம். மேப் செய்யப்பட்ட கீ-க்கள் தனித்தனி நிறங்களில் மாறும்.
+- **Sample Wave Editor:** எல்லா நாப்களுக்கும் தெளிவான பெயர்கள் (`Start`, `End`, `L-Start`, `L-End`, `Pitch`, `Vol`, `Atk`, `Dec`, `Sus`, `Rel`, `Cutoff`, `Res`) மற்றும் வேவ்பார்மில் நேரடியாக இழுத்து மாற்றக்கூடிய `S`, `E`, `LS`, `LE` மார்க்கர்கள்.
+- **Rhythm Sequencer:** ஈவென்ட்களை கிளிக் செய்து சேர்க்கலாம், இடது/வலது இழுத்து நகர்த்தலாம், மேல்/கீழ் இழுத்து Velocity மாற்றலாம் (Right-click = Delete). Grid-ல் Triplets (`1/12 (T)`, `1/24 (T)`) சேர்க்கப்பட்டுள்ளது.
+- **Bottom Keyboard:** கீழே கலர்-கோடட் பியானோ கீஸ் சேர்க்கப்பட்டுள்ளது.

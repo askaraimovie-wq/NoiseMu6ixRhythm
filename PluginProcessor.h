@@ -4,18 +4,26 @@
 #include <juce_dsp/juce_dsp.h>
 #include <array>
 #include <vector>
+#include <atomic>
 
 struct SampleZone
 {
     juce::String name;
     juce::File file;
-    int lowKey = 36;
-    int highKey = 84;
+    int lowKey = 60;
+    int highKey = 60;
     int rootKey = 60;
     int lowVel = 0;
     int highVel = 127;
+    juce::Colour colour { 0xffd9538f };
     juce::AudioBuffer<float> buffer;
     double sampleRate = 44100.0;
+};
+
+struct RhythmEvent
+{
+    float position = 0.0f; // 0.0 to 1.0 across 1 bar (4 beats)
+    float velocity = 0.85f; // 0.05 to 1.0
 };
 
 struct ActiveVoice
@@ -66,39 +74,45 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     bool loadSampleIntoZone (const juce::File& file, int lowKey, int highKey, int rootKey, int lowVel = 0, int highVel = 127);
+    void deleteZone (int index);
     void triggerNote (int midiNote, float velocity);
     void releaseNote (int midiNote);
 
     bool savePresetMn6x (const juce::File& file);
     bool loadPresetMn6x (const juce::File& file);
 
+    int getGridDivisions() const; // 4, 8, 12, 16, 24
+
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     juce::CriticalSection zoneLock;
     std::vector<SampleZone> zones;
-    int selectedZoneIndex = 0;
+    int selectedZoneIndex = -1;
 
-    // 16-step rhythm sequencer velocities (0.0 = off, >0.0 = active)
-    std::array<float, 16> stepVelocities { 1.0f, 0.0f, 0.5f, 0.8f, 0.0f, 0.9f, 0.0f, 0.7f,
-                                           1.0f, 0.0f, 0.6f, 0.85f, 0.0f, 0.9f, 0.5f, 0.0f };
-    std::atomic<int> currentSeqStep { 0 };
-    juce::String currentPresetName { "Rhythm Section 1.mn6x" };
+    juce::CriticalSection seqLock;
+    std::vector<RhythmEvent> seqEvents;
+    std::atomic<float> seqPlayheadNorm { 0.0f };
+    std::atomic<int> lastPlayedNote { -1 };
+
+    juce::String currentPresetName { "Rhythm Section 1" };
+    juce::File currentPresetFile;
 
 private:
     juce::AudioFormatManager formatManager;
-    static constexpr int maxVoices = 16;
+    static constexpr int maxVoices = 24;
     std::array<ActiveVoice, maxVoices> voices;
     double currentSampleRate = 44100.0;
     juce::Random rng;
     int rrCounter = 0;
 
-    // Sequencer state
-    double seqPhaseSamples = 0.0;
+    // Sequencer playback state
+    double seqBarPhase = 0.0; // 0.0 .. 1.0 over 1 bar (4 beats)
     int heldMidiNote = -1;
-    float heldVelocity = 0.8f;
+    float heldVelocity = 0.85f;
 
     void startVoice (int zoneIdx, int midiNote, float velocity);
+    juce::Colour getNextZoneColour (int idx) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NoiseMu6ixRhythmAudioProcessor)
 };
