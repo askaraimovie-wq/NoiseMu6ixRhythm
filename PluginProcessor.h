@@ -61,7 +61,9 @@ struct SampleZone
     int rootKey = 60;
     int lowVel = 0;
     int highVel = 127;
-    juce::Colour colour { 0xffd9538f };
+    // Default color is ALWAYS Blue (user can change manually via Color dropdown)
+    juce::Colour colour { 0xff4ca3ff };
+    int colourIndex = 0;
 
     // Per-Zone Independent Sample Wave Editor Parameters
     float startNorm = 0.0f;
@@ -113,6 +115,10 @@ struct ActiveVoice
 class NoiseMu6ixRhythmAudioProcessor : public juce::AudioProcessor
 {
 public:
+    static constexpr int numPaletteColours = 12;
+    static juce::Colour getPaletteColour (int idx);
+    static juce::String getPaletteColourName (int idx);
+
     NoiseMu6ixRhythmAudioProcessor();
     ~NoiseMu6ixRhythmAudioProcessor() override;
 
@@ -124,7 +130,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "Noise Mu6ix Rhythm v1.0.5"; }
+    const juce::String getName() const override { return "Noise Mu6ix Rhythm v1.0.6"; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -152,7 +158,7 @@ public:
     bool savePresetMn6x (const juce::File& file);
     bool loadPresetMn6x (const juce::File& file);
 
-    int getGridDivisions() const;
+    int getGridDivisions() const; // 4, 8, 12, 16, 24, 32, 48, 64
 
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -165,7 +171,6 @@ public:
     std::atomic<int> lastPlayedNote { -1 };
     std::atomic<bool> internalPlaying { false };
 
-    // Starts empty so user can click and type their own preset name
     juce::String currentPresetName { "" };
     juce::File currentPresetFile;
 
@@ -184,7 +189,6 @@ private:
     bool wasTransportPlaying = false;
 
     void startVoice (int zoneIdx, int midiNote, float velocity);
-    juce::Colour getNextZoneColour (int idx) const;
     std::vector<RhythmEvent> createDefaultEvents() const;
     bool hasAnyHeldNote() const;
 

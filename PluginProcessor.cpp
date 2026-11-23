@@ -3,6 +3,34 @@
 #include <cmath>
 #include <algorithm>
 
+juce::Colour NoiseMu6ixRhythmAudioProcessor::getPaletteColour (int idx)
+{
+    static const juce::Colour palette[numPaletteColours] = {
+        juce::Colour (0xff4ca3ff), // 0: Blue (Default)
+        juce::Colour (0xffe04f8a), // 1: Pink
+        juce::Colour (0xffee5253), // 2: Red
+        juce::Colour (0xffee7b38), // 3: Orange
+        juce::Colour (0xffe8a138), // 4: Amber
+        juce::Colour (0xffd9c838), // 5: Gold
+        juce::Colour (0xff4cc98f), // 6: Emerald
+        juce::Colour (0xff2eb872), // 7: Green
+        juce::Colour (0xff38c4d9), // 8: Cyan
+        juce::Colour (0xffa66cff), // 9: Purple
+        juce::Colour (0xffc56cf0), // 10: Magenta
+        juce::Colour (0xff9aa8bf)  // 11: Silver
+    };
+    return palette[juce::jlimit (0, numPaletteColours - 1, idx)];
+}
+
+juce::String NoiseMu6ixRhythmAudioProcessor::getPaletteColourName (int idx)
+{
+    static const char* names[numPaletteColours] = {
+        "Blue (Default)", "Pink", "Red", "Orange", "Amber", "Gold",
+        "Emerald", "Green", "Cyan", "Purple", "Magenta", "Silver"
+    };
+    return names[juce::jlimit (0, numPaletteColours - 1, idx)];
+}
+
 NoiseMu6ixRhythmAudioProcessor::NoiseMu6ixRhythmAudioProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMETERS", createParameterLayout())
@@ -33,9 +61,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout NoiseMu6ixRhythmAudioProcess
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("timeRand", "Time Randomize", 0.0f, 1.0f, 0.0f));
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("velRand", "Velocity Randomize", 0.0f, 1.0f, 0.0f));
 
+    // Expanded Grid including Triplets 1/12, 1/24, 1/36 and fine 1/32, 1/64
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         "grid", "Grid",
-        juce::StringArray { "1/4", "1/8", "1/12 (T)", "1/16", "1/24 (T)" }, 1));
+        juce::StringArray { "1/4", "1/8", "1/12 (T)", "1/16", "1/24 (T)", "1/32", "1/48 (T)", "1/64" }, 1));
 
     return { params.begin(), params.end() };
 }
@@ -50,17 +79,11 @@ int NoiseMu6ixRhythmAudioProcessor::getGridDivisions() const
         case 2: return 12;
         case 3: return 16;
         case 4: return 24;
+        case 5: return 32;
+        case 6: return 48;
+        case 7: return 64;
         default: return 8;
     }
-}
-
-juce::Colour NoiseMu6ixRhythmAudioProcessor::getNextZoneColour (int idx) const
-{
-    static const juce::Colour palette[8] = {
-        juce::Colour (0xffe04f8a), juce::Colour (0xff4ca3ff), juce::Colour (0xffe8a138), juce::Colour (0xff4cc98f),
-        juce::Colour (0xffa66cff), juce::Colour (0xffee6c4d), juce::Colour (0xff38c4d9), juce::Colour (0xffd9c838)
-    };
-    return palette[idx % 8];
 }
 
 void NoiseMu6ixRhythmAudioProcessor::prepareToPlay (double sampleRate, int)
@@ -94,7 +117,8 @@ int NoiseMu6ixRhythmAudioProcessor::createEmptyZone (int key)
     z.highVel = 127;
     z.realRREnabled = true;
     z.seqEvents = createDefaultEvents();
-    z.colour = getNextZoneColour (static_cast<int> (zones.size()));
+    z.colourIndex = 0; // Always Blue by default!
+    z.colour = getPaletteColour (0);
     zones.push_back (std::move (z));
     selectedZoneIndex = static_cast<int> (zones.size()) - 1;
     return selectedZoneIndex;
@@ -258,13 +282,11 @@ void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, floa
     v.sustainLvl = z.sustainLvl;
     v.releaseDec = 1.0f / std::max (1.0f, static_cast<float> (z.releaseSec * currentSampleRate));
 
-    // Per-Zone Root Key + Pitch Track (ON for Strings/Piano, OFF for Drums)
     double noteSemiOffset = pitchTrackOn ? static_cast<double> (midiNote - z.rootKey) : 0.0;
     double semitones = noteSemiOffset + static_cast<double> (z.pitchSemi) + (rrPitchCents / 100.0);
     v.pitchRatio = (layer.sampleRate / currentSampleRate) * std::pow (2.0, semitones / 12.0);
     v.currentPos = static_cast<double> (z.startNorm * layer.buffer.getNumSamples()) + rrStartOffsetSamples;
 
-    // Per-Zone Pan & Volume
     float finalPan = juce::jlimit (-1.0f, 1.0f, z.pan);
     float panAngle = (finalPan + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
     float finalGain = gain * rrGainMult * z.volume;
@@ -334,7 +356,7 @@ void NoiseMu6ixRhythmAudioProcessor::uiNoteOn (int midiNote, float velocity)
             {
                 selectedZoneIndex = i;
                 for (const auto& ev : z.seqEvents)
-                    if (ev.position < 0.005f)
+                    if (ev.position < 0.004f)
                         startVoice (i, midiNote, velocity * ev.velocity);
             }
         }
@@ -396,7 +418,7 @@ void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
         const juce::ScopedLock sl (zoneLock);
         for (int zIdx = 0; zIdx < static_cast<int> (zones.size()); ++zIdx)
             for (const auto& ev : zones[static_cast<size_t> (zIdx)].seqEvents)
-                if (ev.position < 0.005f)
+                if (ev.position < 0.004f)
                     startVoice (zIdx, zones[static_cast<size_t> (zIdx)].rootKey, 0.9f * ev.velocity);
     }
     wasTransportPlaying = transportAllPlay;
@@ -452,18 +474,21 @@ void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
                 if (subIdx % 2 == 1 && shuffleAmt > 0.001f)
                     evPos += (shuffleAmt * 0.35) / static_cast<double> (divs);
                 if (timeRandAmt > 0.001f)
-                    evPos += (rng.nextFloat() * 2.0f - 1.0f) * 0.012 * timeRandAmt;
+                    evPos += (rng.nextFloat() * 2.0f - 1.0f) * 0.010 * timeRandAmt;
                 evPos = std::fmod (evPos + 1.0, 1.0);
 
-                bool triggered = (! wrapped && evPos > prevPhase && evPos <= seqBarPhase)
-                              || (wrapped && (evPos > prevPhase || evPos <= seqBarPhase));
+                bool triggered = false;
+                if (! wrapped)
+                    triggered = (evPos > prevPhase && evPos <= seqBarPhase);
+                else
+                    triggered = (evPos > prevPhase || evPos <= seqBarPhase);
+
                 if (triggered)
                     startVoice (zIdx, triggerMidi, triggerVel * ev.velocity);
             }
         }
     }
 
-    // Ultra-lightweight voice rendering (zero CPU for inactive voices)
     const juce::ScopedLock sl (zoneLock);
     float* outL = buffer.getWritePointer (0);
     float* outR = buffer.getWritePointer (1);
@@ -557,6 +582,7 @@ bool NoiseMu6ixRhythmAudioProcessor::savePresetMn6x (const juce::File& file)
         zx->setAttribute ("rootKey", z.rootKey);
         zx->setAttribute ("lowVel", z.lowVel);
         zx->setAttribute ("highVel", z.highVel);
+        zx->setAttribute ("colIdx", z.colourIndex);
         zx->setAttribute ("realRR", z.realRREnabled ? 1 : 0);
 
         zx->setAttribute ("start", z.startNorm);
@@ -621,6 +647,8 @@ bool NoiseMu6ixRhythmAudioProcessor::loadPresetMn6x (const juce::File& file)
                 z.rootKey = zx->getIntAttribute ("rootKey", 60);
                 z.lowVel = zx->getIntAttribute ("lowVel", 0);
                 z.highVel = zx->getIntAttribute ("highVel", 127);
+                z.colourIndex = zx->getIntAttribute ("colIdx", 0);
+                z.colour = getPaletteColour (z.colourIndex);
                 z.realRREnabled = zx->getIntAttribute ("realRR", 1) != 0;
 
                 z.startNorm = static_cast<float> (zx->getDoubleAttribute ("start", 0.0));

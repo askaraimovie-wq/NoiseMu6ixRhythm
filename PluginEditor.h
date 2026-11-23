@@ -28,13 +28,13 @@ private:
     int pressedNote = -1;
 };
 
-// 10-Octave Key Mapper: Supports Read-Only mode (MAIN tab) and Full Edit + Root Key mode (EDIT tab)
+// 10-Octave Key Mapper: Read-Only on MAIN tab; Large + Velocity Grid + Direct Left-Click Root Key on EDIT tab
 class KeyMapperComponent : public juce::Component
 {
 public:
     KeyMapperComponent (NoiseMu6ixRhythmAudioProcessor& p);
     void setReadOnly (bool ro) { readOnly = ro; repaint(); }
-    void setRootKeyMode (bool rkm) { rootKeyMode = rkm; repaint(); }
+    void setVelocityGridDivisions (int divs) { velGridDivs = divs; repaint(); }
     bool isReadOnly() const { return readOnly; }
 
     void paint (juce::Graphics& g) override;
@@ -53,7 +53,7 @@ private:
     static constexpr int numKeys = 121;
 
     bool readOnly = true;
-    bool rootKeyMode = false;
+    int velGridDivs = 4; // 0 = Free, 2, 4, 8, 16 velocity grid lines
 
     enum class DragMode { None, Move, LeftEdge, RightEdge, TopEdge, BottomEdge };
     DragMode dragMode = DragMode::None;
@@ -65,6 +65,7 @@ private:
     juce::Rectangle<int> getGridArea() const;
     juce::Rectangle<int> getKeyboardArea() const;
     juce::Rectangle<float> getZoneRect (const SampleZone& z, juce::Rectangle<int> gridArea) const;
+    int snapVelocity (int rawVel) const;
 };
 
 class WaveEditorComponent : public juce::Component
@@ -114,7 +115,7 @@ public:
     void listBoxItemDoubleClicked (int row, const juce::MouseEvent&) override;
 
     void handleFilesDropped (const juce::StringArray& files, int localX, int localY);
-    void syncPerZoneWaveControls();
+    void syncPerZoneControls();
     void togglePlayPause();
     void repaintDynamicAreas();
 
@@ -126,7 +127,7 @@ private:
     // Clickable Title for Scale Menu (50%, 75%, 100%, 125%)
     juce::TextButton titleScaleBtn { "NOISE MU6IX RHYTHM" };
 
-    // ONLY TWO Navigation Tab Buttons: MAIN and EDIT
+    // TWO Navigation Tabs: MAIN and EDIT
     juce::TextButton tabMainBtn { "MAIN" };
     juce::TextButton tabEditBtn { "EDIT" };
 
@@ -137,19 +138,36 @@ private:
     juce::ListBox libraryList;
     juce::Array<juce::File> libraryFiles;
 
-    // Top Bar: Empty editable preset box (with subtle dash placeholder) + SAVE / SAVE AS
+    // Top Bar: Empty editable preset box + SAVE / SAVE AS
     juce::TextEditor presetNameBox;
     juce::TextButton saveBtn { "SAVE" };
     juce::TextButton saveAsBtn { "SAVE AS" };
 
-    // Key Mapper + Edit-Only Side Buttons (FRR / FVL / PITCH / ROOT)
-    KeyMapperComponent keyMapper;
+    // MAIN Tab Components (View-Only KeyMapper + Full-Width Rhythm Sequencer)
+    KeyMapperComponent mainKeyMapper;
+    RhythmSequencerComponent seqComp;
+    juce::TextButton playPauseBtn { "PLAY" };
+    juce::ToggleButton hostSyncBtn { "SYNC" };
+    juce::Label bpmLabel;
+    juce::TextEditor bpmInputBox; // Typeable BPM box (no knob!)
+    LabeledKnob shuffleKnob { "Shuffle" }, timeRandKnob { "Time Rnd" }, velRandKnob { "Vel Rnd" };
+    juce::Label gridLabel;
+    juce::ComboBox gridBox;
+    juce::ToggleButton seqLoopBtn { "LOOP" }; // Placed next to Grid in bottom bar!
+
+    // EDIT Tab Scrollable Container (Large Key Map Editor + Sample Wave Editor)
+    juce::Viewport editViewport;
+    juce::Component editContent;
+
+    juce::Label editKmLabel;
     juce::ToggleButton frrBtn { "FRR" };
     juce::ToggleButton fvlBtn { "FVL" };
     juce::ToggleButton pitchTrackBtn { "PITCH" };
-    juce::ToggleButton rootKeyBtn { "ROOT" };
+    juce::ComboBox velGridBox;
+    juce::ComboBox zoneColourBox;
+    KeyMapperComponent editKeyMapper;
 
-    // EDIT Tab Only: Per-Zone Sample Wave Editor
+    juce::Label editWaveLabel;
     juce::ComboBox trackSelectBox;
     juce::ToggleButton realRRBtn { "RR" };
     juce::ToggleButton sampleLoopBtn { "LOOP" };
@@ -160,27 +178,19 @@ private:
     LabeledKnob attackKnob { "Atk" }, decayKnob { "Dec" }, sustainKnob { "Sus" }, releaseKnob { "Rel" };
     LabeledKnob cutoffKnob { "Cut" }, resKnob { "Res" };
 
-    // MAIN Tab Only: Rhythm Sequencer + Transport
-    RhythmSequencerComponent seqComp;
-    juce::ToggleButton seqLoopBtn { "LOOP" };
-    juce::TextButton playPauseBtn { "PLAY" };
-    juce::ToggleButton hostSyncBtn { "SYNC" };
-    LabeledKnob bpmKnob { "BPM" };
-    LabeledKnob shuffleKnob { "Shuffle" }, timeRandKnob { "Time Rnd" }, velRandKnob { "Vel Rnd" };
-    juce::Label gridLabel;
-    juce::ComboBox gridBox;
-
     // Bottom 10-Octave Piano Strip
     ColorPianoStrip bottomPiano;
 
     // Global APVTS Attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> frrAtt, fvlAtt, pitchTrackAtt, seqLoopAtt, hostSyncAtt;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmAtt, shuffleAtt, timeRandAtt, velRandAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> shuffleAtt, timeRandAtt, velRandAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> gridAtt;
 
     std::unique_ptr<juce::FileChooser> fileChooser;
 
     void setActiveTab (ActiveTab tab);
+    void layoutEditContent (int viewportWidth);
+    void applyBpmText();
     void refreshLibraryFolder (const juce::File& folder);
     void saveAsDialog();
     void showScaleMenu();
