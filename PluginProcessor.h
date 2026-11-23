@@ -8,7 +8,6 @@
 #include <cmath>
 #include <functional>
 
-// Lightweight CPU-friendly Cytomic TPT SVF Filter
 struct FastSVF
 {
     float ic1eq = 0.0f;
@@ -23,7 +22,7 @@ struct FastSVF
     {
         float fc = juce::jlimit (30.0f, static_cast<float> (sampleRate * 0.45), cutoffHz);
         g = std::tan (juce::MathConstants<float>::pi * fc / static_cast<float> (sampleRate));
-        k = 1.0f / juce::jlimit (0.3f, 10.0f, q);
+        k = 1.0f / juce::jlimit (0.3f, 8.0f, q);
         a1 = 1.0f / (1.0f + g * (g + k));
         a2 = g * a1;
         a3 = g * a2;
@@ -48,62 +47,35 @@ struct FastSVF
         ic2eq = 2.0f * v2 - ic2eq;
         return v0 - k * v1 - v2;
     }
-
-    inline float processBP (float v0)
-    {
-        float v3 = v0 - ic2eq;
-        float v1 = a1 * ic1eq + a2 * v3;
-        float v2 = ic2eq + a2 * ic1eq + a3 * v3;
-        ic1eq = 2.0f * v1 - ic1eq;
-        ic2eq = 2.0f * v2 - ic2eq;
-        return v1;
-    }
 };
 
-enum class FxType
+enum class SimpleFxType
 {
-    None = 0,
-    EQ3,
+    Off = 0,
+    EQ,
     Compressor,
     Saturation,
-    Filter,
-    Transient,
     Delay,
-    Reverb,
-    Chorus,
-    Width,
-    Limiter
+    Reverb
 };
 
-struct InsertEffect
+struct SimpleFxSlot
 {
-    FxType type = FxType::None;
-    bool bypassed = false;
-
-    // 3-Band EQ (Kontakt EQ 3 style: Freq 1..3, BW 1..3, Gain 1..3)
-    float eqFreq[3] = { 250.0f, 1500.0f, 7500.0f }; // Hz
-    float eqBw[3]   = { 0.50f,  0.50f,   0.50f };   // octaves (0.1..2.0)
-    float eqGain[3] = { 0.0f,   0.0f,    0.0f };    // dB (-18..+18)
-
-    // Generic 4 normalized parameters (0.0..1.0) for other effects
+    SimpleFxType type = SimpleFxType::Off;
+    bool enabled = true;
     float p1 = 0.5f;
     float p2 = 0.5f;
     float p3 = 0.5f;
-    float p4 = 0.5f;
 
-    // DSP State
-    FastSVF fL1, fR1, fL2, fR2, fL3, fR3;
-    float envFollow = 0.0f;
-    float envFast = 0.0f;
-    float lfoPhase = 0.0f;
+    FastSVF fL, fR;
+    float env = 0.0f;
     std::vector<float> bufL, bufR;
     int writePos = 0;
 
     void prepare (double sr);
-    void reset();
     void processStereo (float* L, float* R, int numSamples, double sr);
-    static juce::String getTypeName (FxType t);
-    static juce::String getParamLabel (FxType t, int idx);
+    static juce::String getTypeName (SimpleFxType t);
+    static juce::String getParamLabel (SimpleFxType t, int idx);
 };
 
 struct RhythmEvent
@@ -122,22 +94,15 @@ struct SampleLayer
 
 struct SampleGroup
 {
-    static constexpr int numInsertSlots = 8;
+    static constexpr int numFxSlots = 4;
 
     juce::String name { "Group 1" };
     bool muted = false;
-    int rrSetId = 0;
-    int keyswitchNote = -1;
-
-    // Per-Group Volume, Pan, Routing & Insert FX Rack (8 slots)
+    int rrSetId = 0;        // 0 = Off, 1..4
+    int keyswitchNote = -1; // -1 = None, 0..35
     float volume = 1.0f;
     float pan = 0.0f;
-    float sendLevel = 0.0f;
-    bool phaseInvert = false;
-    bool lrSwap = false;
-    int outputBusIndex = 0; // 0 = Out 1 .. 7 = Out 8
-
-    std::array<InsertEffect, numInsertSlots> insertFx;
+    std::array<SimpleFxSlot, numFxSlots> fxSlots;
 };
 
 struct SampleZone
@@ -149,29 +114,15 @@ struct SampleZone
     int rootKey = 60;
     int lowVel = 0;
     int highVel = 127;
-    int velFade = 0; // Velocity crossfade range (0..64)
     juce::Colour colour { 0xff4ca3ff };
     int colourIndex = 0;
 
-    // Per-Zone Sample Wave Editor Parameters
     float startNorm = 0.0f;
     float endNorm = 1.0f;
     float loopStartNorm = 0.15f;
     float loopEndNorm = 0.85f;
     bool sampleLoop = false;
-    int loopMode = 0;        // 0=Forward, 1=PingPong, 2=UntilRelease
-    float loopCrossfade = 0.05f;
-    float loopTuneCents = 0.0f;
-    int loopCount = 0;
-
     bool reverse = false;
-    float fadeInNorm = 0.0f;
-    float fadeOutNorm = 0.0f;
-
-    bool waveGridOn = false;
-    bool waveGridAuto = true;
-    int waveGridWidthIdx = 1;
-    float waveGridBpm = 120.0f;
 
     float pitchSemi = 0.0f;
     float pan = 0.0f;
@@ -199,11 +150,7 @@ struct ActiveVoice
     int midiNote = 60;
     double currentPos = 0.0;
     double pitchRatio = 1.0;
-    double loopPitchRatio = 1.0;
     bool playingReverse = false;
-    bool inLoopRegion = false;
-    bool noteReleased = false;
-    int loopsCompleted = 0;
     float gainL = 1.0f;
     float gainR = 1.0f;
     float velocity = 1.0f;
@@ -222,12 +169,8 @@ class NoiseMu6ixRhythmAudioProcessor : public juce::AudioProcessor
 {
 public:
     static constexpr int numPaletteColours = 12;
-    static constexpr int numOutputBuses = 8;
-    static constexpr int numFxSlots = 8;
-
     static juce::Colour getPaletteColour (int idx);
     static juce::String getPaletteColourName (int idx);
-    static int parseMidiNoteFromFilename (const juce::String& name);
 
     NoiseMu6ixRhythmAudioProcessor();
     ~NoiseMu6ixRhythmAudioProcessor() override;
@@ -240,7 +183,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "Noise Mu6ix Rhythm v1.1.0"; }
+    const juce::String getName() const override { return "Noise Mu6ix Rhythm v1.1.1"; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -256,7 +199,6 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     int createEmptyGroup();
-    void deleteGroup (int groupIdx);
     bool isKeyswitchNote (int midiNote) const;
 
     int createEmptyZone (int key);
@@ -264,10 +206,7 @@ public:
     bool loadSampleIntoNewZone (const juce::File& file, int lowKey, int highKey, int rootKey, int lowVel = 0, int highVel = 127);
     void deleteZone (int index);
     void deleteZones (std::vector<int> indices);
-    int duplicateZone (int index);
     void normalizeSelectedSample();
-    void trimSelectedSample();
-    void sliceSelectedSampleToKeys();
     void clearSelectedZoneRhythm();
 
     void triggerNote (int midiNote, float velocity);
@@ -280,7 +219,6 @@ public:
 
     int getGridDivisions() const;
     double getCurrentSampleRate() const { return currentSampleRate; }
-    float getSelectedZonePlayheadNorm() const;
 
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -292,16 +230,7 @@ public:
     std::vector<SampleZone> zones;
     int selectedZoneIndex = -1;
 
-    // 8 Send FX Slots + 8 Main Master FX Slots
-    std::array<InsertEffect, numFxSlots> sendFx;
-    std::array<InsertEffect, numFxSlots> mainFx;
-
-    std::atomic<bool> editAllGroups { false };
-    std::atomic<bool> groupSoloEnabled { false };
-    std::atomic<bool> zoneSoloEnabled { false };
-    std::atomic<bool> selectByMidi { false };
     std::atomic<int> activeKeyswitchNote { -1 };
-
     std::atomic<float> seqPlayheadNorm { 0.0f };
     std::atomic<int> lastPlayedNote { -1 };
     std::atomic<bool> internalPlaying { false };
@@ -317,19 +246,16 @@ private:
     juce::Random rng;
 
     juce::AudioBuffer<float> groupScratchBuf;
-    juce::AudioBuffer<float> sendBusBuf;
-
     uint64_t rrSeedCounter = 1;
     float lastRrPitch = 0.0f;
-    std::array<int, 9> groupRRCounters {};
+    std::array<int, 5> groupRRCounters {};
 
     std::array<float, 128> heldNotesVel {};
     double seqBarPhase = 0.0;
     bool wasTransportPlaying = false;
 
-    void startVoice (int zoneIdx, int midiNote, float velocity, float velFadeGain = 1.0f);
+    void startVoice (int zoneIdx, int midiNote, float velocity);
     bool isGroupActiveForNote (int groupIdx) const;
-    bool isZoneAudible (int zoneIdx) const;
     std::vector<RhythmEvent> createDefaultEvents() const;
     bool hasAnyHeldNote() const;
 
