@@ -74,7 +74,7 @@ void ColorPianoStrip::paint (juce::Graphics& g)
             int oct = (note / 12) - 2;
             g.setColour (isMapped ? juce::Colours::white : juce::Colours::darkgrey);
             g.setFont (9.5f);
-            g.drawText ("C" + juce::String (oct), kr.reduced (1.0f), juce::Justification::bottomCentre, false);
+            g.drawText ("C" + juce::String (oct), kr.reduced (1.0f), juce::Justification::centredBottom, false);
         }
     }
 }
@@ -221,7 +221,7 @@ void KeyMapperComponent::paint (juce::Graphics& g)
             int oct = (note / 12) - 2;
             g.setColour (isMapped ? juce::Colours::white : juce::Colours::darkgrey);
             g.setFont (9.5f);
-            g.drawText ("C" + juce::String (oct), kr.reduced (1.0f), juce::Justification::bottomCentre, false);
+            g.drawText ("C" + juce::String (oct), kr.reduced (1.0f), juce::Justification::centredBottom, false);
         }
     }
 }
