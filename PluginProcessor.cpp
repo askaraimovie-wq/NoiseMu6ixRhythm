@@ -32,6 +32,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout NoiseMu6ixRhythmAudioProcess
     params.push_back (std::make_unique<juce::AudioParameterBool> ("pitchTrack", "Pitch Track (Keys)", false));
     params.push_back (std::make_unique<juce::AudioParameterBool> ("sampleLoop", "Sample Loop", false));
     params.push_back (std::make_unique<juce::AudioParameterBool> ("seqLoop", "Rhythm Loop", false));
+    params.push_back (std::make_unique<juce::AudioParameterBool> ("hostSync", "DAW Sync", true));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> ("internalBpm", "Internal BPM", 40.0f, 240.0f, 120.0f));
 
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("start", "Sample Start", 0.0f, 0.95f, 0.0f));
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("end", "Sample End", 0.05f, 1.0f, 1.0f));
@@ -111,30 +113,65 @@ bool NoiseMu6ixRhythmAudioProcessor::isBusesLayoutSupported (const BusesLayout& 
     return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
 }
 
-bool NoiseMu6ixRhythmAudioProcessor::loadSampleIntoZone (const juce::File& file, int lowKey, int highKey, int rootKey, int lowVel, int highVel)
+int NoiseMu6ixRhythmAudioProcessor::createEmptyZone (int key)
+{
+    const juce::ScopedLock sl (zoneLock);
+    int k = juce::jlimit (36, 84, key);
+    SampleZone z;
+    z.name = "Track " + juce::MidiMessage::getMidiNoteName (k, true, true, 3);
+    z.lowKey = k;
+    z.highKey = k;
+    z.rootKey = k;
+    z.lowVel = 0;
+    z.highVel = 127;
+    z.realRREnabled = true;
+    z.seqEvents = createDefaultEvents();
+    z.colour = getNextZoneColour (static_cast<int> (zones.size()));
+    zones.push_back (std::move (z));
+    selectedZoneIndex = static_cast<int> (zones.size()) - 1;
+    return selectedZoneIndex;
+}
+
+bool NoiseMu6ixRhythmAudioProcessor::addSampleToZone (int zoneIndex, const juce::File& file)
 {
     std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
     if (reader == nullptr)
         return false;
 
-    SampleZone z;
-    z.name = file.getFileNameWithoutExtension();
-    z.file = file;
-    z.lowKey = juce::jlimit (36, 84, lowKey);
-    z.highKey = juce::jlimit (z.lowKey, 84, highKey);
-    z.rootKey = juce::jlimit (36, 84, rootKey);
-    z.lowVel = juce::jlimit (0, 127, lowVel);
-    z.highVel = juce::jlimit (z.lowVel, 127, highVel);
-    z.sampleRate = reader->sampleRate;
-    z.seqEvents = createDefaultEvents();
-    z.buffer.setSize (static_cast<int> (reader->numChannels), static_cast<int> (reader->lengthInSamples));
-    reader->read (&z.buffer, 0, static_cast<int> (reader->lengthInSamples), 0, true, true);
+    SampleLayer layer;
+    layer.name = file.getFileNameWithoutExtension();
+    layer.file = file;
+    layer.sampleRate = reader->sampleRate;
+    layer.buffer.setSize (static_cast<int> (reader->numChannels), static_cast<int> (reader->lengthInSamples));
+    reader->read (&layer.buffer, 0, static_cast<int> (reader->lengthInSamples), 0, true, true);
 
     const juce::ScopedLock sl (zoneLock);
-    z.colour = getNextZoneColour (static_cast<int> (zones.size()));
-    zones.push_back (std::move (z));
-    selectedZoneIndex = static_cast<int> (zones.size()) - 1;
+    if (zoneIndex < 0 || zoneIndex >= static_cast<int> (zones.size()))
+        return false;
+
+    auto& z = zones[static_cast<size_t> (zoneIndex)];
+    if (z.layers.empty())
+        z.name = layer.name;
+    z.layers.push_back (std::move (layer));
+    z.selectedLayerIndex = static_cast<int> (z.layers.size()) - 1;
+    if (z.layers.size() > 1)
+        z.realRREnabled = true; // Auto-enable Real RR when multiple samples are dropped into a single key
     return true;
+}
+
+bool NoiseMu6ixRhythmAudioProcessor::loadSampleIntoNewZone (const juce::File& file, int lowKey, int highKey, int rootKey, int lowVel, int highVel)
+{
+    int idx = createEmptyZone (rootKey);
+    {
+        const juce::ScopedLock sl (zoneLock);
+        auto& z = zones[static_cast<size_t> (idx)];
+        z.lowKey = juce::jlimit (36, 84, lowKey);
+        z.highKey = juce::jlimit (z.lowKey, 84, highKey);
+        z.rootKey = juce::jlimit (36, 84, rootKey);
+        z.lowVel = juce::jlimit (0, 127, lowVel);
+        z.highVel = juce::jlimit (z.lowVel, 127, highVel);
+    }
+    return addSampleToZone (idx, file);
 }
 
 void NoiseMu6ixRhythmAudioProcessor::deleteZone (int index)
@@ -155,8 +192,20 @@ void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, floa
     if (zoneIdx < 0 || zoneIdx >= static_cast<int> (zones.size()))
         return;
 
-    const auto& z = zones[static_cast<size_t> (zoneIdx)];
-    if (z.buffer.getNumSamples() == 0)
+    auto& z = zones[static_cast<size_t> (zoneIdx)];
+    if (z.layers.empty())
+        return;
+
+    // Choose which sample layer to play: Real Round Robin if >1 layer & enabled, else selected layer
+    int layerIdx = juce::jlimit (0, static_cast<int> (z.layers.size()) - 1, z.selectedLayerIndex);
+    if (z.layers.size() > 1 && z.realRREnabled)
+    {
+        layerIdx = z.rrPlayIndex % static_cast<int> (z.layers.size());
+        z.rrPlayIndex = (z.rrPlayIndex + 1) % static_cast<int> (z.layers.size());
+    }
+
+    const auto& layer = z.layers[static_cast<size_t> (layerIdx)];
+    if (layer.buffer.getNumSamples() == 0)
         return;
 
     int vIdx = 0;
@@ -172,12 +221,14 @@ void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, floa
     auto& v = voices[static_cast<size_t> (vIdx)];
     v.active = true;
     v.zoneIndex = zoneIdx;
+    v.layerIndex = layerIdx;
     v.midiNote = midiNote;
     v.velocity = juce::jlimit (0.04f, 1.0f, velocity);
     v.envVal = 0.0f;
     v.envStage = 0;
 
-    bool frrOn = apvts.getRawParameterValue ("frr")->load() > 0.5f;
+    // FRR only activates on single-sample zones (so multi-sample Real RR stays pure!)
+    bool frrOn = (apvts.getRawParameterValue ("frr")->load() > 0.5f) && (z.layers.size() == 1);
     bool fvlOn = apvts.getRawParameterValue ("fvl")->load() > 0.5f;
     bool pitchTrackOn = apvts.getRawParameterValue ("pitchTrack")->load() > 0.5f;
 
@@ -195,10 +246,8 @@ void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, floa
         v.velocity = juce::jlimit (0.04f, 1.0f, v.velocity + delta);
     }
 
-    // 1000+ Unique Generative Fake Round Robin (FRR)
-    // Uses multi-dimensional irrational Weyl sequences + PRNG + anti-repeat memory
+    // 1000+ Generative Fake Round Robin (FRR) — ZERO PANNING (Kicks stay dead center!)
     float rrPitchCents = 0.0f;
-    float rrPan = 0.0f;
     float rrStartOffsetSamples = 0.0f;
     float rrFilterMult = 1.0f;
     float rrGainMult = 1.0f;
@@ -208,30 +257,23 @@ void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, floa
     {
         ++rrSeedCounter;
         double n = static_cast<double> (rrSeedCounter);
-        // 5 mutually irrational constants ensure thousands of unique non-repeating combinations
         float u1 = static_cast<float> (std::fmod (n * 0.61803398875 + rng.nextFloat() * 0.13, 1.0));
-        float u2 = static_cast<float> (std::fmod (n * 0.75487766625 + rng.nextFloat() * 0.17, 1.0));
         float u3 = static_cast<float> (std::fmod (n * 0.56984029099 + rng.nextFloat() * 0.19, 1.0));
         float u4 = static_cast<float> (std::fmod (n * 0.43015970900 + rng.nextFloat() * 0.11, 1.0));
         float u5 = static_cast<float> (std::fmod (n * 0.32471795724 + rng.nextFloat() * 0.23, 1.0));
 
-        rrPitchCents = (u1 * 2.0f - 1.0f) * 18.0f; // +-18 cents continuous
+        rrPitchCents = (u1 * 2.0f - 1.0f) * 18.0f;
         if (std::abs (rrPitchCents - lastRrPitch) < 4.5f)
             rrPitchCents = -rrPitchCents;
         lastRrPitch = rrPitchCents;
 
-        rrPan = (u2 * 2.0f - 1.0f) * 0.28f;
-        if (std::abs (rrPan - lastRrPan) < 0.06f)
-            rrPan = -rrPan;
-        lastRrPan = rrPan;
-
-        rrStartOffsetSamples = u3 * static_cast<float> (currentSampleRate * 0.0042); // 0 to 4.2ms transient shift
-        rrFilterMult = 0.68f + u4 * 0.50f;  // 0.68x to 1.18x tonal brightness shift
-        rrGainMult = 0.88f + u5 * 0.24f;    // subtle +-1.2 dB organic hit weight
-        rrExtraAttackSec = u3 * 0.0045f;    // subtle transient soften/sharpen
+        rrStartOffsetSamples = u3 * static_cast<float> (currentSampleRate * 0.0042);
+        rrFilterMult = 0.68f + u4 * 0.50f;
+        rrGainMult = 0.88f + u5 * 0.24f;
+        rrExtraAttackSec = u3 * 0.0045f;
     }
 
-    // Continuous Multi-Dimensional Fake Velocity Layer (FVL)
+    // Continuous Fake Velocity Layer (FVL)
     float fvlCutoff = baseCutoff;
     float gain = v.velocity;
     float fvlExtraAttackSec = 0.0f;
@@ -241,24 +283,22 @@ void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, floa
     {
         float vel = v.velocity;
         float velCurve = std::pow (vel, 1.75f);
-        // Soft hits = warmer/darker + softer transient attack; Hard hits = bright, punchy + subtle harmonic drive
         fvlCutoff = juce::jlimit (280.0f, 20000.0f, 320.0f + (baseCutoff - 320.0f) * velCurve);
         gain = 0.16f + 0.84f * velCurve;
-        fvlExtraAttackSec = (1.0f - vel) * (1.0f - vel) * 0.014f; // up to 14ms softer attack on ghost hits
-        v.driveAmt = 1.0f + std::max (0.0f, vel - 0.55f) * 2.4f;  // subtle saturation punch on hard hits
+        fvlExtraAttackSec = (1.0f - vel) * (1.0f - vel) * 0.014f;
+        v.driveAmt = 1.0f + std::max (0.0f, vel - 0.55f) * 2.4f;
     }
 
     float totalAttackSec = std::max (0.0005f, attackSec + rrExtraAttackSec + fvlExtraAttackSec);
     v.attackInc = 1.0f / std::max (1.0f, static_cast<float> (totalAttackSec * currentSampleRate));
 
-    // Pitch Track ON = follow keyboard pitch (strings/melodic); OFF = keep fixed root pitch (drums/percussion)
     double noteSemiOffset = pitchTrackOn ? static_cast<double> (midiNote - z.rootKey) : 0.0;
     double semitones = noteSemiOffset + static_cast<double> (pitchSemi) + (rrPitchCents / 100.0);
-    v.pitchRatio = (z.sampleRate / currentSampleRate) * std::pow (2.0, semitones / 12.0);
-    v.currentPos = static_cast<double> (startNorm * z.buffer.getNumSamples()) + rrStartOffsetSamples;
+    v.pitchRatio = (layer.sampleRate / currentSampleRate) * std::pow (2.0, semitones / 12.0);
+    v.currentPos = static_cast<double> (startNorm * layer.buffer.getNumSamples()) + rrStartOffsetSamples;
 
-    // Combined Pan (User Pan Knob + FRR Micro-Pan)
-    float finalPan = juce::jlimit (-1.0f, 1.0f, basePan + rrPan);
+    // Pure user Pan knob ONLY (no FRR pan drift)
+    float finalPan = juce::jlimit (-1.0f, 1.0f, basePan);
     float panAngle = (finalPan + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
     float finalGain = gain * rrGainMult;
     v.gainL = finalGain * std::cos (panAngle) * 1.41421356f;
@@ -303,7 +343,6 @@ void NoiseMu6ixRhythmAudioProcessor::releaseNote (int midiNote)
 
 bool NoiseMu6ixRhythmAudioProcessor::hasAnyHeldNote() const
 {
-    if (masterAllHeld.load()) return true;
     for (float v : heldNotesVel)
         if (v > 0.0f) return true;
     return false;
@@ -312,26 +351,7 @@ bool NoiseMu6ixRhythmAudioProcessor::hasAnyHeldNote() const
 void NoiseMu6ixRhythmAudioProcessor::uiNoteOn (int midiNote, float velocity)
 {
     bool seqLoopOn = apvts.getRawParameterValue ("seqLoop")->load() > 0.5f;
-    bool wasIdle = ! hasAnyHeldNote();
-
-    if (midiNote == masterAllKey)
-    {
-        masterAllHeld.store (true);
-        if (wasIdle) { seqBarPhase = 0.0; seqPlayheadNorm.store (0.0f); }
-        const juce::ScopedLock sl (zoneLock);
-        for (int i = 0; i < static_cast<int> (zones.size()); ++i)
-        {
-            if (! seqLoopOn)
-                startVoice (i, zones[static_cast<size_t> (i)].rootKey, velocity);
-            else
-            {
-                for (const auto& ev : zones[static_cast<size_t> (i)].seqEvents)
-                    if (ev.position < 0.005f)
-                        startVoice (i, zones[static_cast<size_t> (i)].rootKey, velocity * ev.velocity);
-            }
-        }
-        return;
-    }
+    bool wasIdle = ! hasAnyHeldNote() && ! internalPlaying.load();
 
     if (midiNote >= 0 && midiNote < 128)
         heldNotesVel[static_cast<size_t> (midiNote)] = velocity;
@@ -361,13 +381,6 @@ void NoiseMu6ixRhythmAudioProcessor::uiNoteOn (int midiNote, float velocity)
 
 void NoiseMu6ixRhythmAudioProcessor::uiNoteOff (int midiNote)
 {
-    if (midiNote == masterAllKey)
-    {
-        masterAllHeld.store (false);
-        for (auto& v : voices)
-            if (v.active) v.envStage = 3;
-        return;
-    }
     if (midiNote >= 0 && midiNote < 128)
         heldNotesVel[static_cast<size_t> (midiNote)] = 0.0f;
     releaseNote (midiNote);
@@ -379,6 +392,23 @@ void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
     buffer.clear();
 
     bool seqLoopOn = apvts.getRawParameterValue ("seqLoop")->load() > 0.5f;
+    bool hostSyncOn = apvts.getRawParameterValue ("hostSync")->load() > 0.5f;
+    double bpm = static_cast<double> (apvts.getRawParameterValue ("internalBpm")->load());
+    bool dawPlaying = false;
+
+    if (auto* ph = getPlayHead())
+    {
+        if (auto pos = ph->getPosition())
+        {
+            if (hostSyncOn)
+            {
+                if (auto b = pos->getBpm())
+                    bpm = *b;
+                dawPlaying = pos->getIsPlaying();
+            }
+        }
+    }
+
     bool sampleLoopOn = apvts.getRawParameterValue ("sampleLoop")->load() > 0.5f;
     float vol = apvts.getRawParameterValue ("volume")->load();
     float startNorm = apvts.getRawParameterValue ("start")->load();
@@ -393,7 +423,6 @@ void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
     float shuffleAmt = apvts.getRawParameterValue ("shuffle")->load();
     float timeRandAmt = apvts.getRawParameterValue ("timeRand")->load();
 
-    // Handle Incoming MIDI (Polyphonic + Master ALL key)
     for (const auto metadata : midiMessages)
     {
         auto msg = metadata.getMessage();
@@ -403,17 +432,26 @@ void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
             uiNoteOff (msg.getNoteNumber());
     }
 
-    // Polyphonic Multi-Zone Rhythm Sequencer
-    if (seqLoopOn && hasAnyHeldNote())
+    // Transport Play/Pause + DAW Spacebar Sync
+    bool transportAllPlay = seqLoopOn && (internalPlaying.load() || (hostSyncOn && dawPlaying));
+    bool anyMidiHeld = seqLoopOn && hasAnyHeldNote();
+    bool shouldRunSeq = transportAllPlay || anyMidiHeld;
+
+    if (transportAllPlay && ! wasTransportPlaying)
     {
-        double bpm = 120.0;
-        if (auto* ph = getPlayHead())
-        {
-            if (auto pos = ph->getPosition())
-                if (auto b = pos->getBpm())
-                    bpm = *b;
-        }
-        double samplesPerBar = (60.0 / bpm) * 4.0 * currentSampleRate;
+        seqBarPhase = 0.0;
+        seqPlayheadNorm.store (0.0f);
+        const juce::ScopedLock sl (zoneLock);
+        for (int zIdx = 0; zIdx < static_cast<int> (zones.size()); ++zIdx)
+            for (const auto& ev : zones[static_cast<size_t> (zIdx)].seqEvents)
+                if (ev.position < 0.005f)
+                    startVoice (zIdx, zones[static_cast<size_t> (zIdx)].rootKey, 0.9f * ev.velocity);
+    }
+    wasTransportPlaying = transportAllPlay;
+
+    if (shouldRunSeq)
+    {
+        double samplesPerBar = (60.0 / std::max (20.0, bpm)) * 4.0 * currentSampleRate;
         double prevPhase = seqBarPhase;
         double deltaPhase = static_cast<double> (buffer.getNumSamples()) / std::max (1.0, samplesPerBar);
         seqBarPhase += deltaPhase;
@@ -426,18 +464,16 @@ void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
         seqPlayheadNorm.store (static_cast<float> (seqBarPhase));
 
         int divs = getGridDivisions();
-        bool allOn = masterAllHeld.load();
-
         const juce::ScopedLock sl (zoneLock);
         for (int zIdx = 0; zIdx < static_cast<int> (zones.size()); ++zIdx)
         {
             const auto& z = zones[static_cast<size_t> (zIdx)];
+            if (z.layers.empty()) continue;
 
-            // Find if this zone should play (either Master ALL key is held, or a key inside this zone is held)
             int triggerMidi = -1;
             float triggerVel = 0.0f;
 
-            if (allOn)
+            if (transportAllPlay)
             {
                 triggerMidi = z.rootKey;
                 triggerVel = 0.9f;
@@ -489,14 +525,20 @@ void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
             continue;
 
         const auto& z = zones[static_cast<size_t> (v.zoneIndex)];
-        int numSamples = z.buffer.getNumSamples();
+        if (v.layerIndex < 0 || v.layerIndex >= static_cast<int> (z.layers.size()))
+            continue;
+
+        const auto& layer = z.layers[static_cast<size_t> (v.layerIndex)];
+        int numSamples = layer.buffer.getNumSamples();
+        if (numSamples < 2) continue;
+
         int startSample = static_cast<int> (startNorm * numSamples);
         int endSample = std::max (startSample + 2, static_cast<int> (endNorm * numSamples));
         int lStartSample = juce::jlimit (startSample, endSample - 2, static_cast<int> (loopStartNorm * numSamples));
         int lEndSample = juce::jlimit (lStartSample + 2, endSample, static_cast<int> (loopEndNorm * numSamples));
 
-        const float* srcL = z.buffer.getReadPointer (0);
-        const float* srcR = z.buffer.getNumChannels() > 1 ? z.buffer.getReadPointer (1) : srcL;
+        const float* srcL = layer.buffer.getReadPointer (0);
+        const float* srcR = layer.buffer.getNumChannels() > 1 ? layer.buffer.getReadPointer (1) : srcL;
 
         for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
@@ -535,7 +577,6 @@ void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
             sL = v.filterL.processSample (0, sL);
             sR = v.filterR.processSample (0, sR);
 
-            // Subtle FVL harmonic saturation on hard hits
             if (v.driveAmt > 1.01f)
             {
                 sL = std::tanh (sL * v.driveAmt) / std::tanh (v.driveAmt);
@@ -561,12 +602,20 @@ bool NoiseMu6ixRhythmAudioProcessor::savePresetMn6x (const juce::File& file)
     for (const auto& z : zones)
     {
         auto* zx = zonesXml->createNewChildElement ("ZONE");
-        zx->setAttribute ("file", z.file.getFullPathName());
+        zx->setAttribute ("name", z.name);
         zx->setAttribute ("lowKey", z.lowKey);
         zx->setAttribute ("highKey", z.highKey);
         zx->setAttribute ("rootKey", z.rootKey);
         zx->setAttribute ("lowVel", z.lowVel);
         zx->setAttribute ("highVel", z.highVel);
+        zx->setAttribute ("realRR", z.realRREnabled ? 1 : 0);
+
+        auto* layersXml = zx->createNewChildElement ("LAYERS");
+        for (const auto& l : z.layers)
+        {
+            auto* lx = layersXml->createNewChildElement ("LAYER");
+            lx->setAttribute ("file", l.file.getFullPathName());
+        }
 
         auto* seqXml = zx->createNewChildElement ("SEQ_EVENTS");
         for (const auto& ev : z.seqEvents)
@@ -599,29 +648,38 @@ bool NoiseMu6ixRhythmAudioProcessor::loadPresetMn6x (const juce::File& file)
         }
         for (auto* zx : zonesXml->getChildIterator())
         {
-            juce::File f (zx->getStringAttribute ("file"));
-            if (f.existsAsFile())
+            int idx = createEmptyZone (zx->getIntAttribute ("rootKey", 60));
             {
-                if (loadSampleIntoZone (f,
-                    zx->getIntAttribute ("lowKey", 60),
-                    zx->getIntAttribute ("highKey", 60),
-                    zx->getIntAttribute ("rootKey", 60),
-                    zx->getIntAttribute ("lowVel", 0),
-                    zx->getIntAttribute ("highVel", 127)))
+                const juce::ScopedLock sl (zoneLock);
+                auto& z = zones[static_cast<size_t> (idx)];
+                z.name = zx->getStringAttribute ("name", z.name);
+                z.lowKey = zx->getIntAttribute ("lowKey", 60);
+                z.highKey = zx->getIntAttribute ("highKey", 60);
+                z.rootKey = zx->getIntAttribute ("rootKey", 60);
+                z.lowVel = zx->getIntAttribute ("lowVel", 0);
+                z.highVel = zx->getIntAttribute ("highVel", 127);
+                z.realRREnabled = zx->getIntAttribute ("realRR", 1) != 0;
+            }
+            if (auto* layersXml = zx->getChildByName ("LAYERS"))
+            {
+                for (auto* lx : layersXml->getChildIterator())
                 {
-                    if (auto* seqXml = zx->getChildByName ("SEQ_EVENTS"))
-                    {
-                        const juce::ScopedLock sl (zoneLock);
-                        auto& z = zones.back();
-                        z.seqEvents.clear();
-                        for (auto* ex : seqXml->getChildIterator())
-                        {
-                            RhythmEvent ev;
-                            ev.position = static_cast<float> (ex->getDoubleAttribute ("pos", 0.0));
-                            ev.velocity = static_cast<float> (ex->getDoubleAttribute ("vel", 0.85));
-                            z.seqEvents.push_back (ev);
-                        }
-                    }
+                    juce::File f (lx->getStringAttribute ("file"));
+                    if (f.existsAsFile())
+                        addSampleToZone (idx, f);
+                }
+            }
+            if (auto* seqXml = zx->getChildByName ("SEQ_EVENTS"))
+            {
+                const juce::ScopedLock sl (zoneLock);
+                auto& z = zones[static_cast<size_t> (idx)];
+                z.seqEvents.clear();
+                for (auto* ex : seqXml->getChildIterator())
+                {
+                    RhythmEvent ev;
+                    ev.position = static_cast<float> (ex->getDoubleAttribute ("pos", 0.0));
+                    ev.velocity = static_cast<float> (ex->getDoubleAttribute ("vel", 0.85));
+                    z.seqEvents.push_back (ev);
                 }
             }
         }

@@ -27,7 +27,7 @@ void LabeledKnob::resized()
     slider.setBounds (r);
 }
 
-// ---------------- ColorPianoStrip (Bottom Keyboard with Black ALL Key) ----------------
+// ---------------- ColorPianoStrip (Clean C1..C5 without ALL key) ----------------
 ColorPianoStrip::ColorPianoStrip (NoiseMu6ixRhythmAudioProcessor& p) : processor (p) {}
 
 void ColorPianoStrip::paint (juce::Graphics& g)
@@ -36,30 +36,15 @@ void ColorPianoStrip::paint (juce::Graphics& g)
     g.fillAll (juce::Colour (0xff12161e));
     float keyW = area.getWidth() / static_cast<float> (numKeys);
     int activeNote = processor.lastPlayedNote.load();
-    bool allOn = processor.masterAllHeld.load();
 
     const juce::ScopedLock sl (processor.zoneLock);
 
     for (int i = 0; i < numKeys; ++i)
     {
         int note = startNote + i;
-        juce::Rectangle<float> kr (area.getX() + i * keyW, static_cast<float> (area.getY()), keyW, static_cast<float> (area.getHeight()));
-
-        // Master ALL Trigger Key (Black key at index 0, MIDI 35)
-        if (note == NoiseMu6ixRhythmAudioProcessor::masterAllKey)
-        {
-            g.setColour ((pressedNote == note || allOn) ? juce::Colour (0xffe8a138) : juce::Colour (0xff0a0c10));
-            g.fillRect (kr);
-            g.setColour (juce::Colour (0xffe8a138));
-            g.drawRect (kr, 1.2f);
-            g.setColour (juce::Colours::white);
-            g.setFont (juce::FontOptions (8.5f, juce::Font::bold));
-            g.drawText ("ALL", kr, juce::Justification::centred, false);
-            continue;
-        }
-
         int n = note % 12;
         bool isBlack = (n == 1 || n == 3 || n == 6 || n == 8 || n == 10);
+        juce::Rectangle<float> kr (area.getX() + i * keyW, static_cast<float> (area.getY()), keyW, static_cast<float> (area.getHeight()));
 
         juce::Colour mappedCol = juce::Colours::transparentBlack;
         bool isMapped = false;
@@ -170,8 +155,8 @@ void KeyMapperComponent::paint (juce::Graphics& g)
     if (processor.zones.empty())
     {
         g.setColour (juce::Colour (0xff78849b));
-        g.setFont (11.5f);
-        g.drawText ("Double-click or Drop WAV on any key | Drag edges to resize | Right-click to delete",
+        g.setFont (11.0f);
+        g.drawText ("Double-click any key to create Empty Track, then drop 1 or multiple WAVs into Wave Editor below",
                     gridArea, juce::Justification::centred);
     }
 
@@ -179,7 +164,7 @@ void KeyMapperComponent::paint (juce::Graphics& g)
     {
         const auto& z = processor.zones[static_cast<size_t> (i)];
         auto r = getZoneRect (z, gridArea);
-        g.setColour (z.colour.withAlpha (0.65f));
+        g.setColour (z.colour.withAlpha (z.layers.empty() ? 0.35f : 0.68f));
         g.fillRect (r);
         g.setColour (i == processor.selectedZoneIndex ? juce::Colours::white : z.colour.brighter (0.3f));
         g.drawRect (r, i == processor.selectedZoneIndex ? 2.0f : 1.0f);
@@ -191,33 +176,24 @@ void KeyMapperComponent::paint (juce::Graphics& g)
             g.fillRect (r.getRight() - 3.0f, r.getCentreY() - 4.0f, 3.0f, 8.0f);
         }
 
+        juce::String label = z.name;
+        if (z.layers.size() > 1)
+            label += " (" + juce::String (z.layers.size()) + " RR)";
+        else if (z.layers.empty())
+            label += " [Empty]";
+
         g.setColour (juce::Colours::white);
         g.setFont (9.5f);
-        g.drawText (z.name, r.reduced (3.0f, 1.0f), juce::Justification::topLeft, true);
+        g.drawText (label, r.reduced (3.0f, 1.0f), juce::Justification::topLeft, true);
     }
 
-    // Color-coded horizontal piano strip + Black ALL key at far left
     int activeNote = processor.lastPlayedNote.load();
-    bool allOn = processor.masterAllHeld.load();
     for (int i = 0; i < numKeys; ++i)
     {
         int note = startNote + i;
-        juce::Rectangle<float> kr (keyArea.getX() + i * keyW, static_cast<float> (keyArea.getY()), keyW, static_cast<float> (keyArea.getHeight()));
-
-        if (note == NoiseMu6ixRhythmAudioProcessor::masterAllKey)
-        {
-            g.setColour ((pressedKey == note || allOn) ? juce::Colour (0xffe8a138) : juce::Colour (0xff0a0c10));
-            g.fillRect (kr);
-            g.setColour (juce::Colour (0xffe8a138));
-            g.drawRect (kr, 1.2f);
-            g.setColour (juce::Colours::white);
-            g.setFont (juce::FontOptions (8.0f, juce::Font::bold));
-            g.drawText ("ALL", kr, juce::Justification::centred, false);
-            continue;
-        }
-
         int n = note % 12;
         bool isBlack = (n == 1 || n == 3 || n == 6 || n == 8 || n == 10);
+        juce::Rectangle<float> kr (keyArea.getX() + i * keyW, static_cast<float> (keyArea.getY()), keyW, static_cast<float> (keyArea.getHeight()));
 
         juce::Colour mappedCol = juce::Colours::transparentBlack;
         bool isMapped = false;
@@ -261,6 +237,7 @@ void KeyMapperComponent::mouseDown (const juce::MouseEvent& e)
         int note = noteAtX (e.x);
         pressedKey = note;
         processor.uiNoteOn (note, 0.9f);
+        if (onSelectionChanged) onSelectionChanged();
         repaint();
         return;
     }
@@ -277,6 +254,7 @@ void KeyMapperComponent::mouseDown (const juce::MouseEvent& e)
             if (e.mods.isRightButtonDown())
             {
                 processor.deleteZone (i);
+                if (onSelectionChanged) onSelectionChanged();
                 repaint();
                 return;
             }
@@ -298,6 +276,7 @@ void KeyMapperComponent::mouseDown (const juce::MouseEvent& e)
             else
                 dragMode = DragMode::Move;
 
+            if (onSelectionChanged) onSelectionChanged();
             repaint();
             return;
         }
@@ -307,8 +286,6 @@ void KeyMapperComponent::mouseDown (const juce::MouseEvent& e)
 void KeyMapperComponent::mouseDoubleClick (const juce::MouseEvent& e)
 {
     int note = noteAtX (e.x);
-    if (note == NoiseMu6ixRhythmAudioProcessor::masterAllKey)
-        return;
     if (onDoubleClickKey)
         onDoubleClickKey (note);
 }
@@ -373,13 +350,24 @@ void WaveEditorComponent::paint (juce::Graphics& g)
     {
         g.setColour (juce::Colour (0xff78849b));
         g.setFont (11.5f);
-        g.drawText ("Drop WAV/AIFF Sample Here, Double-Click Key Mapper, or Double-Click Library", area, juce::Justification::centred);
+        g.drawText ("Double-click a key above to create Empty Track, then Drag & Drop WAV(s) here", area, juce::Justification::centred);
         return;
     }
 
     const auto& z = processor.zones[static_cast<size_t> (processor.selectedZoneIndex)];
-    const float* data = z.buffer.getReadPointer (0);
-    int numSamples = z.buffer.getNumSamples();
+    if (z.layers.empty())
+    {
+        g.setColour (z.colour.brighter (0.3f));
+        g.setFont (11.5f);
+        g.drawText ("Empty Track (" + juce::MidiMessage::getMidiNoteName (z.rootKey, true, true, 3)
+                    + ") — Drop 1 or multiple Round Robin WAV files here!", area, juce::Justification::centred);
+        return;
+    }
+
+    int lIdx = juce::jlimit (0, static_cast<int> (z.layers.size()) - 1, z.selectedLayerIndex);
+    const auto& layer = z.layers[static_cast<size_t> (lIdx)];
+    const float* data = layer.buffer.getReadPointer (0);
+    int numSamples = layer.buffer.getNumSamples();
     if (numSamples <= 0) return;
 
     float startNorm = processor.apvts.getRawParameterValue ("start")->load();
@@ -443,8 +431,7 @@ void WaveEditorComponent::paint (juce::Graphics& g)
 
     g.setColour (juce::Colours::white.withAlpha (0.85f));
     g.setFont (10.5f);
-    g.drawText (z.name + "  [" + juce::MidiMessage::getMidiNoteName (z.lowKey, true, true, 3) + "-"
-                + juce::MidiMessage::getMidiNoteName (z.highKey, true, true, 3) + "]",
+    g.drawText ("Track " + juce::String (lIdx + 1) + "/" + juce::String (z.layers.size()) + ": " + layer.name,
                 area.reduced (16, 3), juce::Justification::topRight, true);
 }
 
@@ -485,7 +472,7 @@ void WaveEditorComponent::mouseDrag (const juce::MouseEvent& e)
 
 void WaveEditorComponent::mouseUp (const juce::MouseEvent&) { activeDrag = MarkerDrag::None; }
 
-// ---------------- RhythmSequencerComponent (Per-Zone Independent Rhythm!) ----------------
+// ---------------- RhythmSequencerComponent ----------------
 RhythmSequencerComponent::RhythmSequencerComponent (NoiseMu6ixRhythmAudioProcessor& p) : processor (p) {}
 
 float RhythmSequencerComponent::snapToGrid (float normX) const
@@ -524,7 +511,7 @@ void RhythmSequencerComponent::paint (juce::Graphics& g)
     {
         g.setColour (juce::Colour (0xff8a7a99));
         g.setFont (11.5f);
-        g.drawText ("Load & select a key zone above to edit its individual rhythm pattern", area, juce::Justification::centred);
+        g.drawText ("Select a key zone above to edit its rhythm pattern | Turn ON LOOP & press PLAY or Spacebar", area, juce::Justification::centred);
         return;
     }
 
@@ -544,7 +531,7 @@ void RhythmSequencerComponent::paint (juce::Graphics& g)
 
     g.setColour (z.colour.brighter (0.4f));
     g.setFont (10.0f);
-    g.drawText ("Active Pattern: " + z.name + "  |  Click=Add  Drag=Move/Vel  RightClick=Del",
+    g.drawText ("Pattern: " + z.name + "  |  Click=Add  Drag=Move/Vel  RightClick=Del",
                 area.reduced (6, 2), juce::Justification::topRight, true);
 }
 
@@ -611,17 +598,15 @@ void RhythmSequencerComponent::mouseUp (const juce::MouseEvent&)
     repaint();
 }
 
-// ---------------- MainPluginView (Scalable Inner View) ----------------
+// ---------------- MainPluginView ----------------
 MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function<void(float)> onScaleSelected)
     : audioProcessor (p), scaleCallback (std::move (onScaleSelected)),
       keyMapper (p), waveEditor (p), seqComp (p), bottomPiano (p)
 {
-    // Clickable Title for UI Scaling (50%, 75%, 100%, 125%)
     addAndMakeVisible (titleScaleBtn);
     titleScaleBtn.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     titleScaleBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff273040));
     titleScaleBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
-    titleScaleBtn.setTooltip ("Click to change plugin size (50% / 75% / 100% / 125%)");
     titleScaleBtn.onClick = [this]() { showScaleMenu(); };
 
     // Library Panel
@@ -684,9 +669,15 @@ MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function
     };
     saveAsBtn.onClick = [this]() { saveAsDialog(); };
 
-    // Key Mapper + FRR / FVL / PITCH buttons
+    // Key Mapper: Double-Click creates an EMPTY TRACK on that key!
     addAndMakeVisible (keyMapper);
-    keyMapper.onDoubleClickKey = [this] (int key) { openSampleChooserForKey (key); };
+    keyMapper.onDoubleClickKey = [this] (int key)
+    {
+        audioProcessor.createEmptyZone (key);
+        syncWaveHeaderControls();
+        repaintDynamicAreas();
+    };
+    keyMapper.onSelectionChanged = [this]() { syncWaveHeaderControls(); };
 
     addAndMakeVisible (frrBtn);
     addAndMakeVisible (fvlBtn);
@@ -694,19 +685,40 @@ MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function
     frrBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xffff5599));
     fvlBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xff4ca3ff));
     pitchTrackBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xffe8a138));
-    frrBtn.setTooltip ("1000+ Generative Fake Round Robin");
-    fvlBtn.setTooltip ("Continuous Fake Velocity Layer");
-    pitchTrackBtn.setTooltip ("ON = Pitch changes across keys (Strings) | OFF = Fixed Pitch (Drums)");
-
     frrAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "frr", frrBtn);
     fvlAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "fvl", fvlBtn);
     pitchTrackAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "pitchTrack", pitchTrackBtn);
 
-    // Wave Editor + Labeled Knobs (including Pan)
-    addAndMakeVisible (waveEditor);
+    // Wave Editor Header: Track Selector (Track 1, Track 2...), Real RR Toggle, Sample Loop Toggle
+    addAndMakeVisible (trackSelectBox);
+    trackSelectBox.setTextWhenNoChoicesAvailable ("No Tracks");
+    trackSelectBox.onChange = [this]()
+    {
+        int id = trackSelectBox.getSelectedId();
+        if (id > 0)
+        {
+            const juce::ScopedLock sl (audioProcessor.zoneLock);
+            if (audioProcessor.selectedZoneIndex >= 0 && audioProcessor.selectedZoneIndex < static_cast<int> (audioProcessor.zones.size()))
+                audioProcessor.zones[static_cast<size_t> (audioProcessor.selectedZoneIndex)].selectedLayerIndex = id - 1;
+            waveEditor.repaint();
+        }
+    };
+
+    addAndMakeVisible (realRRBtn);
+    realRRBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xff5aa9ff));
+    realRRBtn.setTooltip ("Real Round Robin: Cycles Track 1, Track 2, Track 3... on this key");
+    realRRBtn.onClick = [this]()
+    {
+        const juce::ScopedLock sl (audioProcessor.zoneLock);
+        if (audioProcessor.selectedZoneIndex >= 0 && audioProcessor.selectedZoneIndex < static_cast<int> (audioProcessor.zones.size()))
+            audioProcessor.zones[static_cast<size_t> (audioProcessor.selectedZoneIndex)].realRREnabled = realRRBtn.getToggleState();
+    };
+
     addAndMakeVisible (sampleLoopBtn);
     sampleLoopBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xff4cc98f));
     sampleLoopAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "sampleLoop", sampleLoopBtn);
+
+    addAndMakeVisible (waveEditor);
 
     LabeledKnob* waveKnobs[] = { &startKnob, &endKnob, &loopStartKnob, &loopEndKnob, &pitchKnob, &panKnob, &volKnob,
                                  &attackKnob, &decayKnob, &sustainKnob, &releaseKnob, &cutoffKnob, &resKnob };
@@ -727,11 +739,23 @@ MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function
     cutoffAtt    = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "cutoff", cutoffKnob.slider);
     resAtt       = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "res", resKnob.slider);
 
-    // Rhythm Sequencer + Bottom Controls
+    // Rhythm Sequencer + Play/Pause, Sync & Internal BPM
     addAndMakeVisible (seqComp);
     addAndMakeVisible (seqLoopBtn);
     seqLoopBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xffe84ea2));
     seqLoopAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "seqLoop", seqLoopBtn);
+
+    addAndMakeVisible (playPauseBtn);
+    playPauseBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff273549));
+    playPauseBtn.onClick = [this]() { togglePlayPause(); };
+
+    addAndMakeVisible (hostSyncBtn);
+    hostSyncBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xff4cc98f));
+    hostSyncBtn.setTooltip ("ON = Sync with DAW BPM & Spacebar | OFF = Use internal BPM");
+    hostSyncAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "hostSync", hostSyncBtn);
+
+    addAndMakeVisible (bpmKnob);
+    bpmAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "internalBpm", bpmKnob.slider);
 
     addAndMakeVisible (shuffleKnob);
     addAndMakeVisible (timeRandKnob);
@@ -752,6 +776,43 @@ MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function
     gridBox.onChange = [this]() { seqComp.repaint(); };
 
     addAndMakeVisible (bottomPiano);
+    syncWaveHeaderControls();
+}
+
+void MainPluginView::togglePlayPause()
+{
+    bool next = ! audioProcessor.internalPlaying.load();
+    audioProcessor.internalPlaying.store (next);
+    if (next)
+    {
+        // Auto-turn on Rhythm Loop when pressing Play so user hears rhythm immediately
+        if (auto* p = audioProcessor.apvts.getParameter ("seqLoop"))
+            p->setValueNotifyingHost (1.0f);
+    }
+    playPauseBtn.setButtonText (next ? "PAUSE" : "PLAY");
+    playPauseBtn.setColour (juce::TextButton::buttonColourId, next ? juce::Colour (0xffc93b7b) : juce::Colour (0xff273549));
+}
+
+void MainPluginView::syncWaveHeaderControls()
+{
+    trackSelectBox.clear (juce::dontSendNotification);
+    const juce::ScopedLock sl (audioProcessor.zoneLock);
+    if (audioProcessor.selectedZoneIndex < 0 || audioProcessor.selectedZoneIndex >= static_cast<int> (audioProcessor.zones.size()))
+    {
+        realRRBtn.setToggleState (false, juce::dontSendNotification);
+        return;
+    }
+
+    const auto& z = audioProcessor.zones[static_cast<size_t> (audioProcessor.selectedZoneIndex)];
+    for (int i = 0; i < static_cast<int> (z.layers.size()); ++i)
+        trackSelectBox.addItem ("Track " + juce::String (i + 1) + ": " + z.layers[static_cast<size_t> (i)].name, i + 1);
+
+    if (! z.layers.empty())
+    {
+        int sel = juce::jlimit (0, static_cast<int> (z.layers.size()) - 1, z.selectedLayerIndex);
+        trackSelectBox.setSelectedId (sel + 1, juce::dontSendNotification);
+    }
+    realRRBtn.setToggleState (z.realRREnabled, juce::dontSendNotification);
 }
 
 void MainPluginView::showScaleMenu()
@@ -769,22 +830,6 @@ void MainPluginView::showScaleMenu()
             else if (result == 2 && scaleCallback) scaleCallback (0.75f);
             else if (result == 3 && scaleCallback) scaleCallback (1.00f);
             else if (result == 4 && scaleCallback) scaleCallback (1.25f);
-        });
-}
-
-void MainPluginView::openSampleChooserForKey (int targetKey)
-{
-    fileChooser = std::make_unique<juce::FileChooser> ("Select Sample for Key",
-        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory), "*.wav;*.aiff;*.flac");
-    fileChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-        [this, targetKey] (const juce::FileChooser& fc)
-        {
-            auto f = fc.getResult();
-            if (f.existsAsFile())
-            {
-                audioProcessor.loadSampleIntoZone (f, targetKey, targetKey, targetKey);
-                repaintDynamicAreas();
-            }
         });
 }
 
@@ -841,15 +886,56 @@ void MainPluginView::listBoxItemDoubleClicked (int row, const juce::MouseEvent&)
     }
     else
     {
-        int nextKey = 60 + static_cast<int> (audioProcessor.zones.size());
-        nextKey = juce::jlimit (36, 84, nextKey);
-        audioProcessor.loadSampleIntoZone (f, nextKey, nextKey, nextKey);
+        // If an empty zone is currently selected, add to it; else create new zone on next key
+        bool addedToSelected = false;
+        {
+            const juce::ScopedLock sl (audioProcessor.zoneLock);
+            if (audioProcessor.selectedZoneIndex >= 0 && audioProcessor.selectedZoneIndex < static_cast<int> (audioProcessor.zones.size()))
+            {
+                if (audioProcessor.zones[static_cast<size_t> (audioProcessor.selectedZoneIndex)].layers.empty())
+                    addedToSelected = true;
+            }
+        }
+        if (addedToSelected)
+            audioProcessor.addSampleToZone (audioProcessor.selectedZoneIndex, f);
+        else
+        {
+            int nextKey = juce::jlimit (36, 84, 60 + static_cast<int> (audioProcessor.zones.size()));
+            audioProcessor.loadSampleIntoNewZone (f, nextKey, nextKey, nextKey);
+        }
     }
+    syncWaveHeaderControls();
     repaintDynamicAreas();
 }
 
 void MainPluginView::handleFilesDropped (const juce::StringArray& files, int localX, int localY)
 {
+    // If dropped onto Sample Wave Editor -> add ALL dropped files as Round Robin layers into selected zone!
+    if (waveEditor.getBounds().contains (localX, localY))
+    {
+        int targetZone = audioProcessor.selectedZoneIndex;
+        if (targetZone < 0 || targetZone >= static_cast<int> (audioProcessor.zones.size()))
+            targetZone = audioProcessor.createEmptyZone (60);
+
+        for (const auto& path : files)
+        {
+            juce::File f (path);
+            if (f.hasFileExtension (".mn6x"))
+            {
+                audioProcessor.loadPresetMn6x (f);
+                presetNameBox.setText (audioProcessor.currentPresetName, juce::dontSendNotification);
+            }
+            else
+            {
+                audioProcessor.addSampleToZone (targetZone, f);
+            }
+        }
+        syncWaveHeaderControls();
+        repaintDynamicAreas();
+        return;
+    }
+
+    // Otherwise dropped onto Key Mapper -> map to key under cursor
     int targetKey = 60 + static_cast<int> (audioProcessor.zones.size());
     if (keyMapper.getBounds().contains (localX, localY))
         targetKey = juce::jlimit (36, 84, keyMapper.noteAtX (localX - keyMapper.getX()));
@@ -865,10 +951,11 @@ void MainPluginView::handleFilesDropped (const juce::StringArray& files, int loc
         }
         else
         {
-            audioProcessor.loadSampleIntoZone (f, targetKey, targetKey, targetKey);
+            audioProcessor.loadSampleIntoNewZone (f, targetKey, targetKey, targetKey);
             targetKey = juce::jlimit (36, 84, targetKey + 1);
         }
     }
+    syncWaveHeaderControls();
     repaintDynamicAreas();
 }
 
@@ -884,25 +971,25 @@ void MainPluginView::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colour (0xff1c222d));
 
-    // Version v1.0.2 in bottom-right corner
+    // Version v1.0.3 in bottom-right corner
     g.setColour (juce::Colour (0xff6e7b91));
     g.setFont (10.0f);
-    g.drawText ("v1.0.2", getWidth() - 56, getHeight() - 16, 48, 13, juce::Justification::centredRight);
+    g.drawText ("v1.0.3", getWidth() - 56, getHeight() - 16, 48, 13, juce::Justification::centredRight);
 
     // Section Labels
     g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
     g.setColour (juce::Colour (0xff9aa8bf));
     g.drawText ("LIBRARY", 10, 8, 100, 16, juce::Justification::centredLeft);
     g.drawText ("KEY MAPPER", 184, 44, 140, 14, juce::Justification::centredLeft);
-    g.drawText ("SAMPLE WAVE EDITOR", 184, 190, 200, 14, juce::Justification::centredLeft);
-    g.drawText ("RHYTHM SEQUENCER", 184, 376, 200, 14, juce::Justification::centredLeft);
+    g.drawText ("SAMPLE WAVE EDITOR", 184, 190, 160, 14, juce::Justification::centredLeft);
+    g.drawText ("RHYTHM SEQUENCER", 184, 376, 160, 14, juce::Justification::centredLeft);
 }
 
 void MainPluginView::resized()
 {
     auto area = getLocalBounds().reduced (8);
 
-    // Left Library Panel (168px compact)
+    // Left Library Panel
     auto libArea = area.removeFromLeft (168);
     libArea.removeFromTop (18);
     auto libBtnRow = libArea.removeFromTop (24);
@@ -929,13 +1016,16 @@ void MainPluginView::resized()
     pitchTrackBtn.setBounds (kmSide.removeFromTop (30).reduced (2));
     keyMapper.setBounds (kmRow);
 
-    // Sample Wave Editor
-    area.removeFromTop (18);
-    auto waveHeader = area.removeFromTop (20);
-    sampleLoopBtn.setBounds (waveHeader.removeFromRight (68));
+    // Sample Wave Editor Header: Track Selector + RR + LOOP
+    area.removeFromTop (16);
+    auto waveHeader = area.removeFromTop (22);
+    waveHeader.removeFromLeft (165); // leave room for "SAMPLE WAVE EDITOR" label
+    sampleLoopBtn.setBounds (waveHeader.removeFromRight (64));
+    realRRBtn.setBounds (waveHeader.removeFromRight (52));
+    trackSelectBox.setBounds (waveHeader.removeFromRight (180).reduced (4, 1));
     waveEditor.setBounds (area.removeFromTop (84));
 
-    // Wave Editor Labeled Knobs Row (13 knobs including Pan)
+    // Wave Editor Labeled Knobs Row (13 knobs)
     area.removeFromTop (3);
     auto knobRow = area.removeFromTop (64);
     LabeledKnob* waveKnobs[] = { &startKnob, &endKnob, &loopStartKnob, &loopEndKnob, &pitchKnob, &panKnob, &volKnob,
@@ -951,17 +1041,20 @@ void MainPluginView::resized()
     seqLoopBtn.setBounds (seqSide.removeFromTop (30).reduced (2));
     seqComp.setBounds (seqRow);
 
-    // Bottom Labeled Controls Row
+    // Bottom Transport & Rhythm Controls Row (PLAY/PAUSE, SYNC, BPM, Shuffle, Time Rnd, Vel Rnd, Grid)
     area.removeFromTop (4);
     auto bottomCtrl = area.removeFromTop (58);
-    shuffleKnob.setBounds (bottomCtrl.removeFromLeft (68).reduced (1));
-    timeRandKnob.setBounds (bottomCtrl.removeFromLeft (68).reduced (1));
-    velRandKnob.setBounds (bottomCtrl.removeFromLeft (68).reduced (1));
+    playPauseBtn.setBounds (bottomCtrl.removeFromLeft (66).reduced (2, 10));
+    hostSyncBtn.setBounds (bottomCtrl.removeFromLeft (64).reduced (2, 12));
+    bpmKnob.setBounds (bottomCtrl.removeFromLeft (62).reduced (1));
+    shuffleKnob.setBounds (bottomCtrl.removeFromLeft (64).reduced (1));
+    timeRandKnob.setBounds (bottomCtrl.removeFromLeft (64).reduced (1));
+    velRandKnob.setBounds (bottomCtrl.removeFromLeft (64).reduced (1));
     auto gridArea = bottomCtrl.removeFromLeft (104).reduced (4, 1);
     gridLabel.setBounds (gridArea.removeFromTop (14));
     gridBox.setBounds (gridArea.removeFromTop (24).reduced (0, 1));
 
-    // Bottom Playable Color-Coded Keyboard
+    // Bottom Playable Color-Coded Keyboard (Clean C1..C5)
     area.removeFromTop (4);
     bottomPiano.setBounds (area.removeFromTop (34));
 }
@@ -971,6 +1064,7 @@ NoiseMu6ixRhythmAudioProcessorEditor::NoiseMu6ixRhythmAudioProcessorEditor (Nois
     : AudioProcessorEditor (&p), audioProcessor (p),
       mainView (p, [this] (float s) { applyUiScale (s); })
 {
+    setWantsKeyboardFocus (true);
     addAndMakeVisible (mainView);
     mainView.setBounds (0, 0, baseWidth, baseHeight);
     setSize (baseWidth, baseHeight);
@@ -978,6 +1072,16 @@ NoiseMu6ixRhythmAudioProcessorEditor::NoiseMu6ixRhythmAudioProcessorEditor (Nois
 }
 
 NoiseMu6ixRhythmAudioProcessorEditor::~NoiseMu6ixRhythmAudioProcessorEditor() { stopTimer(); }
+
+bool NoiseMu6ixRhythmAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
+{
+    if (key == juce::KeyPress::spaceKey)
+    {
+        mainView.togglePlayPause();
+        return true;
+    }
+    return false;
+}
 
 void NoiseMu6ixRhythmAudioProcessorEditor::applyUiScale (float newScale)
 {

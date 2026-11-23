@@ -22,8 +22,8 @@ public:
 
 private:
     NoiseMu6ixRhythmAudioProcessor& processor;
-    static constexpr int startNote = 35; // 35 = Master ALL black key, 36..84 = C1..C5
-    static constexpr int numKeys = 50;
+    static constexpr int startNote = 36; // C1..C5 (ALL key removed)
+    static constexpr int numKeys = 49;
     int pressedNote = -1;
 };
 
@@ -39,11 +39,12 @@ public:
 
     int noteAtX (int x) const;
     std::function<void(int)> onDoubleClickKey;
+    std::function<void()> onSelectionChanged;
 
 private:
     NoiseMu6ixRhythmAudioProcessor& processor;
-    static constexpr int startNote = 35; // 35 = Master ALL black key, 36..84 = C1..C5
-    static constexpr int numKeys = 50;
+    static constexpr int startNote = 36; // C1..C5
+    static constexpr int numKeys = 49;
 
     enum class DragMode { None, Move, LeftEdge, RightEdge, TopEdge, BottomEdge };
     DragMode dragMode = DragMode::None;
@@ -100,14 +101,15 @@ public:
     void listBoxItemDoubleClicked (int row, const juce::MouseEvent&) override;
 
     void handleFilesDropped (const juce::StringArray& files, int localX, int localY);
-    void openSampleChooserForKey (int targetKey);
+    void syncWaveHeaderControls();
+    void togglePlayPause();
     void repaintDynamicAreas();
 
 private:
     NoiseMu6ixRhythmAudioProcessor& audioProcessor;
     std::function<void(float)> scaleCallback;
 
-    // Clickable Title Button for Scale Menu (50%, 75%, 100%, 125%)
+    // Clickable Title for Scale Menu
     juce::TextButton titleScaleBtn { "NOISE MU6IX RHYTHM" };
 
     // Library Panel
@@ -128,17 +130,24 @@ private:
     juce::ToggleButton fvlBtn { "FVL" };
     juce::ToggleButton pitchTrackBtn { "PITCH" };
 
-    // Wave Editor + Labeled Knobs (including PAN!)
-    WaveEditorComponent waveEditor;
+    // Wave Editor Header: Track Selector (Track 1, Track 2...), Real RR Toggle, Sample Loop Toggle
+    juce::ComboBox trackSelectBox;
+    juce::ToggleButton realRRBtn { "RR" };
     juce::ToggleButton sampleLoopBtn { "LOOP" };
+    WaveEditorComponent waveEditor;
+
+    // Wave Editor Knobs
     LabeledKnob startKnob { "Start" }, endKnob { "End" }, loopStartKnob { "L-Start" }, loopEndKnob { "L-End" };
     LabeledKnob pitchKnob { "Pitch" }, panKnob { "Pan" }, volKnob { "Vol" };
     LabeledKnob attackKnob { "Atk" }, decayKnob { "Dec" }, sustainKnob { "Sus" }, releaseKnob { "Rel" };
     LabeledKnob cutoffKnob { "Cut" }, resKnob { "Res" };
 
-    // Rhythm Sequencer + Bottom Controls
+    // Rhythm Sequencer + Transport (Play/Pause, Sync, Internal BPM)
     RhythmSequencerComponent seqComp;
     juce::ToggleButton seqLoopBtn { "LOOP" };
+    juce::TextButton playPauseBtn { "PLAY" };
+    juce::ToggleButton hostSyncBtn { "SYNC" };
+    LabeledKnob bpmKnob { "BPM" };
     LabeledKnob shuffleKnob { "Shuffle" }, timeRandKnob { "Time Rnd" }, velRandKnob { "Vel Rnd" };
     juce::Label gridLabel;
     juce::ComboBox gridBox;
@@ -147,7 +156,8 @@ private:
     ColorPianoStrip bottomPiano;
 
     // APVTS Attachments
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> frrAtt, fvlAtt, pitchTrackAtt, sampleLoopAtt, seqLoopAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> frrAtt, fvlAtt, pitchTrackAtt, sampleLoopAtt, seqLoopAtt, hostSyncAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> startAtt, endAtt, loopStartAtt, loopEndAtt, pitchAtt, panAtt, volAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attackAtt, decayAtt, sustainAtt, releaseAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> cutoffAtt, resAtt;
@@ -175,6 +185,7 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void timerCallback() override;
+    bool keyPressed (const juce::KeyPress& key) override;
 
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void filesDropped (const juce::StringArray& files, int x, int y) override;
