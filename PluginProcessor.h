@@ -6,6 +6,12 @@
 #include <vector>
 #include <atomic>
 
+struct RhythmEvent
+{
+    float position = 0.0f; // 0.0 to 1.0 across 1 bar (4 beats)
+    float velocity = 0.85f; // 0.05 to 1.0
+};
+
 struct SampleZone
 {
     juce::String name;
@@ -18,12 +24,7 @@ struct SampleZone
     juce::Colour colour { 0xffd9538f };
     juce::AudioBuffer<float> buffer;
     double sampleRate = 44100.0;
-};
-
-struct RhythmEvent
-{
-    float position = 0.0f; // 0.0 to 1.0 across 1 bar (4 beats)
-    float velocity = 0.85f; // 0.05 to 1.0
+    std::vector<RhythmEvent> seqEvents;
 };
 
 struct ActiveVoice
@@ -38,6 +39,8 @@ struct ActiveVoice
     float velocity = 1.0f;
     float envVal = 0.0f;
     int envStage = 0; // 0=attack, 1=decay, 2=sustain, 3=release
+    float attackInc = 0.01f;
+    float driveAmt = 1.0f;
     juce::dsp::StateVariableTPTFilter<float> filterL;
     juce::dsp::StateVariableTPTFilter<float> filterR;
     float filterCutoff = 18000.0f;
@@ -47,6 +50,8 @@ struct ActiveVoice
 class NoiseMu6ixRhythmAudioProcessor : public juce::AudioProcessor
 {
 public:
+    static constexpr int masterAllKey = 35; // B0 (Black key before C1) triggers ALL zones' rhythms
+
     NoiseMu6ixRhythmAudioProcessor();
     ~NoiseMu6ixRhythmAudioProcessor() override;
 
@@ -78,6 +83,10 @@ public:
     void triggerNote (int midiNote, float velocity);
     void releaseNote (int midiNote);
 
+    // For UI piano clicks to participate in polyphonic rhythm loop too
+    void uiNoteOn (int midiNote, float velocity);
+    void uiNoteOff (int midiNote);
+
     bool savePresetMn6x (const juce::File& file);
     bool loadPresetMn6x (const juce::File& file);
 
@@ -90,29 +99,33 @@ public:
     std::vector<SampleZone> zones;
     int selectedZoneIndex = -1;
 
-    juce::CriticalSection seqLock;
-    std::vector<RhythmEvent> seqEvents;
     std::atomic<float> seqPlayheadNorm { 0.0f };
     std::atomic<int> lastPlayedNote { -1 };
+    std::atomic<bool> masterAllHeld { false };
 
     juce::String currentPresetName { "Rhythm Section 1" };
     juce::File currentPresetFile;
 
 private:
     juce::AudioFormatManager formatManager;
-    static constexpr int maxVoices = 24;
+    static constexpr int maxVoices = 32;
     std::array<ActiveVoice, maxVoices> voices;
     double currentSampleRate = 44100.0;
     juce::Random rng;
-    int rrCounter = 0;
 
-    // Sequencer playback state
+    // 1000+ Generative Round-Robin state (quasi-random Weyl sequence + anti-repeat memory)
+    uint64_t rrSeedCounter = 1;
+    float lastRrPitch = 0.0f;
+    float lastRrPan = 0.0f;
+
+    // Polyphonic held notes for simultaneous multi-rhythm playback
+    std::array<float, 128> heldNotesVel {};
     double seqBarPhase = 0.0; // 0.0 .. 1.0 over 1 bar (4 beats)
-    int heldMidiNote = -1;
-    float heldVelocity = 0.85f;
 
     void startVoice (int zoneIdx, int midiNote, float velocity);
     juce::Colour getNextZoneColour (int idx) const;
+    std::vector<RhythmEvent> createDefaultEvents() const;
+    bool hasAnyHeldNote() const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NoiseMu6ixRhythmAudioProcessor)
 };
