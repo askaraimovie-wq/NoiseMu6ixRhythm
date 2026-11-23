@@ -29,10 +29,12 @@ juce_add_plugin(NoiseMu6ixRhythm
 
 target_sources(NoiseMu6ixRhythm
     PRIVATE
-        Source/PluginProcessor.cpp
-        Source/PluginProcessor.h
-        Source/PluginEditor.cpp
-        Source/PluginEditor.h
+        PluginProcessor.cpp
+        PluginProcessor.h
+        PluginEditor.cpp
+        PluginEditor.h
+)
+
 )
 
 target_compile_definitions(NoiseMu6ixRhythm
