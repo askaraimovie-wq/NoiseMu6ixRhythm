@@ -35,8 +35,6 @@ target_sources(NoiseMu6ixRhythm
         PluginEditor.h
 )
 
-)
-
 target_compile_definitions(NoiseMu6ixRhythm
     PUBLIC
         JUCE_WEB_BROWSER=0
