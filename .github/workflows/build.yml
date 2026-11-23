@@ -1,4 +1,4 @@
-name: Build Noise Mu6ix Rhythm VST3
+name: Build RYTHME VST3
 
 on:
   push:
@@ -17,10 +17,10 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build VST3 Plugin
-        run: cmake --build build --config Release --target NoiseMu6ixRhythm_VST3 --parallel
+        run: cmake --build build --config Release --target RYTHME_VST3 --parallel
 
       - name: Upload VST3 Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Noise-Mu6ix-Rhythm-v1.0.1-Windows-VST3
-          path: build/NoiseMu6ixRhythm_artefacts/Release/VST3/*.vst3
+          name: RYTHME-v1.2.0-Windows-VST3
+          path: build/RYTHME_artefacts/Release/VST3/*.vst3
