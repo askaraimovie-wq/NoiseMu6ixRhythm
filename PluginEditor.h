@@ -14,16 +14,38 @@ public:
     juce::Label label;
 };
 
+// Vertical Fader for Group Volume & Pan
+class VerticalFaderControl : public juce::Component
+{
+public:
+    VerticalFaderControl (const juce::String& labelText);
+    void resized() override;
+    juce::Slider slider;
+    juce::Label label;
+};
+
+// Geometric N6 Logo + RYTHME Title Badge (Clickable for UI Scale Menu)
+class N6BrandHeader : public juce::Component
+{
+public:
+    N6BrandHeader (std::function<void()> onClickMenu);
+    void paint (juce::Graphics& g) override;
+    void mouseDown (const juce::MouseEvent&) override { if (onClick) onClick(); }
+
+private:
+    std::function<void()> onClick;
+};
+
 class ColorPianoStrip : public juce::Component
 {
 public:
-    ColorPianoStrip (NoiseMu6ixRhythmAudioProcessor& p);
+    ColorPianoStrip (RythmeAudioProcessor& p);
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
 
 private:
-    NoiseMu6ixRhythmAudioProcessor& processor;
+    RythmeAudioProcessor& processor;
     static constexpr int startNote = 0;
     static constexpr int numKeys = 121;
     int pressedNote = -1;
@@ -32,7 +54,7 @@ private:
 class KeyMapperComponent : public juce::Component
 {
 public:
-    KeyMapperComponent (NoiseMu6ixRhythmAudioProcessor& p);
+    KeyMapperComponent (RythmeAudioProcessor& p);
     void setReadOnly (bool ro) { readOnly = ro; repaint(); }
     void setVelocityGridDivisions (int divs) { velGridDivs = divs; repaint(); }
     bool isReadOnly() const { return readOnly; }
@@ -53,7 +75,7 @@ public:
     std::function<void()> onSelectionChanged;
 
 private:
-    NoiseMu6ixRhythmAudioProcessor& processor;
+    RythmeAudioProcessor& processor;
     static constexpr int startNote = 0;
     static constexpr int numKeys = 121;
 
@@ -83,7 +105,7 @@ private:
 class WaveEditorComponent : public juce::Component
 {
 public:
-    WaveEditorComponent (NoiseMu6ixRhythmAudioProcessor& p);
+    WaveEditorComponent (RythmeAudioProcessor& p);
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
@@ -92,7 +114,7 @@ public:
     std::function<void()> onMarkersChanged;
 
 private:
-    NoiseMu6ixRhythmAudioProcessor& processor;
+    RythmeAudioProcessor& processor;
     enum class MarkerDrag { None, Start, End, LoopStart, LoopEnd };
     MarkerDrag activeDrag = MarkerDrag::None;
 };
@@ -100,14 +122,14 @@ private:
 class RhythmSequencerComponent : public juce::Component
 {
 public:
-    RhythmSequencerComponent (NoiseMu6ixRhythmAudioProcessor& p);
+    RhythmSequencerComponent (RythmeAudioProcessor& p);
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
 
 private:
-    NoiseMu6ixRhythmAudioProcessor& processor;
+    RythmeAudioProcessor& processor;
     int draggedEventIdx = -1;
     float snapToGrid (float normX) const;
 };
@@ -118,7 +140,7 @@ class MainPluginView : public juce::Component,
 public:
     enum class ActiveTab { Main = 0, Edit };
 
-    MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function<void(float)> onScaleSelected);
+    MainPluginView (RythmeAudioProcessor& p, std::function<void(float)> onScaleSelected);
     void paint (juce::Graphics& g) override;
     void resized() override;
 
@@ -134,28 +156,32 @@ public:
     void repaintDynamicAreas();
 
 private:
-    NoiseMu6ixRhythmAudioProcessor& audioProcessor;
+    RythmeAudioProcessor& audioProcessor;
     std::function<void(float)> scaleCallback;
     ActiveTab activeTab = ActiveTab::Main;
 
-    juce::TextButton titleScaleBtn { "NOISE MU6IX RHYTHM" };
-    juce::TextButton tabMainBtn { "MAIN" };
-    juce::TextButton tabEditBtn { "EDIT" };
+    // Top-Left N6 Logo + RYTHME Brand Header
+    N6BrandHeader brandHeader;
 
-    // Library Panel
+    // Native Instruments / Kontakt-Style Library Panel (below logo/title)
     juce::TextButton addLibBtn { "+ ADD LIBRARY" };
     juce::TextButton sortAzBtn { "A-Z" };
     juce::TextButton delLibBtn { "DEL" };
+    juce::Label activeLibraryBoxLabel;
     juce::ListBox libraryList;
+    juce::String currentLibraryFolderName { "NO LIBRARY LOADED" };
     juce::Array<juce::File> libraryFiles;
 
-    // Top Bar
+    // Top Bar: MAIN & EDIT buttons where old title was + Preset Name + SAVE / SAVE AS
+    juce::TextButton tabMainBtn { "MAIN" };
+    juce::TextButton tabEditBtn { "EDIT" };
     juce::TextEditor presetNameBox;
     juce::TextButton saveBtn { "SAVE" };
     juce::TextButton saveAsBtn { "SAVE AS" };
 
     // ---------------- MAIN TAB ----------------
     KeyMapperComponent mainKeyMapper;
+    juce::Label rhythmSeqHeaderLbl;
     RhythmSequencerComponent seqComp;
     juce::TextButton playPauseBtn { "PLAY" };
     juce::ToggleButton hostSyncBtn { "SYNC" };
@@ -167,20 +193,22 @@ private:
     juce::ToggleButton seqLoopBtn { "LOOP" };
     juce::TextButton seqClearBtn { "Clr" };
 
-    // ---------------- EDIT TAB (Clean Simple Layout) ----------------
-    // Compact Group Strip
+    // ---------------- EDIT TAB (Scrollable Spacious Layout) ----------------
+    juce::Viewport editViewport;
+    juce::Component editContent;
+
+    // Group Strip: + Grp, Del Grp, Group Select, Rename, M, KS (No Group RR!), Vertical Vol & Pan Faders
     juce::TextButton addGroupBtn { "+ Grp" };
+    juce::TextButton delGroupBtn { "Del Grp" };
     juce::ComboBox groupSelectBox;
     juce::TextEditor groupNameEdit;
-    juce::ToggleButton groupMuteBtn { "M" };
-    juce::ComboBox groupRrBox;
+    juce::TextButton groupMuteBtn { "M" };
     juce::ComboBox groupKsBox;
-    LabeledKnob grpVolKnob { "G.Vol" }, grpPanKnob { "G.Pan" };
+    VerticalFaderControl grpVolFader { "Vol" }, grpPanFader { "Pan" };
 
-    // Compact Key Mapper Header
-    juce::ToggleButton frrBtn { "FRR" };
-    juce::ToggleButton fvlBtn { "FVL" };
-    juce::ToggleButton pitchTrackBtn { "PITCH" };
+    // Key Mapper Uniform Switch/Button Bar (No FVL!) + Tall Key Mapper
+    juce::TextButton frrBtn { "FRR" };
+    juce::TextButton pitchTrackBtn { "PITCH" };
     juce::TextButton selectAllZonesBtn { "ALL" };
     juce::TextButton delZoneBtn { "Del" };
     juce::TextButton autoGridBtn { "Auto Grid" };
@@ -188,35 +216,41 @@ private:
     juce::ComboBox zoneColourBox;
     KeyMapperComponent editKeyMapper;
 
-    // Compact Wave Editor + Knobs
+    // Wave Editor Uniform Switch/Button Bar (Sample Name Only, Play, RR, LOOP, Z-Cross, REV, NORM, Reset)
+    juce::TextButton wavePlayBtn { "Play" };
     juce::ComboBox trackSelectBox;
-    juce::ToggleButton realRRBtn { "RR" };
-    juce::ToggleButton sampleLoopBtn { "LOOP" };
-    juce::ToggleButton reverseBtn { "REV" };
+    juce::TextButton realRRBtn { "RR" };
+    juce::TextButton sampleLoopBtn { "LOOP" };
+    juce::TextButton zeroCrossBtn { "Z-Cross" };
+    juce::TextButton reverseBtn { "REV" };
     juce::TextButton normalizeBtn { "NORM" };
+    juce::TextButton resetZoneBtn { "Reset" };
     WaveEditorComponent waveEditor;
 
+    // 2 Spacious Rows of Large Zone Knobs
     LabeledKnob startKnob { "Start" }, endKnob { "End" }, loopStartKnob { "L-Start" }, loopEndKnob { "L-End" };
     LabeledKnob pitchKnob { "Pitch" }, panKnob { "Pan" }, volKnob { "Vol" };
     LabeledKnob attackKnob { "Atk" }, decayKnob { "Dec" }, sustainKnob { "Sus" }, releaseKnob { "Rel" };
     LabeledKnob cutoffKnob { "Cut" }, resKnob { "Res" };
 
-    // Simple FX Strip (4 slots + 3 knobs)
+    // Simple FX Strip (4 slots + Uniform ON button + 3 Large Knobs)
     juce::ComboBox fxSlotSelectBox;
     juce::ComboBox fxTypeBox;
-    juce::ToggleButton fxEnableBtn { "ON" };
+    juce::TextButton fxEnableBtn { "ON" };
     LabeledKnob fxP1 { "P1" }, fxP2 { "P2" }, fxP3 { "P3" };
 
     // Bottom 10-Octave Piano Strip
     ColorPianoStrip bottomPiano;
 
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> frrAtt, fvlAtt, pitchTrackAtt, seqLoopAtt, hostSyncAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> frrAtt, pitchTrackAtt, seqLoopAtt, hostSyncAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> shuffleAtt, timeRandAtt, velRandAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> gridAtt;
 
     std::unique_ptr<juce::FileChooser> fileChooser;
 
+    void styleUniformSwitchButton (juce::TextButton& b, juce::Colour activeCol);
     void setActiveTab (ActiveTab tab);
+    void layoutEditContent (int viewportW);
     void refreshGroupBoxes();
     void syncGroupControls();
     void syncFxControls();
@@ -226,16 +260,16 @@ private:
     void showScaleMenu();
 };
 
-class NoiseMu6ixRhythmAudioProcessorEditor : public juce::AudioProcessorEditor,
-                                             public juce::FileDragAndDropTarget,
-                                             public juce::Timer
+class RythmeAudioProcessorEditor : public juce::AudioProcessorEditor,
+                                   public juce::FileDragAndDropTarget,
+                                   public juce::Timer
 {
 public:
     static constexpr int baseWidth = 960;
     static constexpr int baseHeight = 600;
 
-    NoiseMu6ixRhythmAudioProcessorEditor (NoiseMu6ixRhythmAudioProcessor&);
-    ~NoiseMu6ixRhythmAudioProcessorEditor() override;
+    RythmeAudioProcessorEditor (RythmeAudioProcessor&);
+    ~RythmeAudioProcessorEditor() override;
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -246,11 +280,11 @@ public:
     void filesDropped (const juce::StringArray& files, int x, int y) override;
 
 private:
-    NoiseMu6ixRhythmAudioProcessor& audioProcessor;
+    RythmeAudioProcessor& audioProcessor;
     float currentScale = 1.0f;
     MainPluginView mainView;
 
     void applyUiScale (float newScale);
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NoiseMu6ixRhythmAudioProcessorEditor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RythmeAudioProcessorEditor)
 };

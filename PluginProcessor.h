@@ -98,7 +98,6 @@ struct SampleGroup
 
     juce::String name { "Group 1" };
     bool muted = false;
-    int rrSetId = 0;        // 0 = Off, 1..4
     int keyswitchNote = -1; // -1 = None, 0..35
     float volume = 1.0f;
     float pan = 0.0f;
@@ -122,6 +121,7 @@ struct SampleZone
     float loopStartNorm = 0.15f;
     float loopEndNorm = 0.85f;
     bool sampleLoop = false;
+    bool autoZeroCross = true;
     bool reverse = false;
 
     float pitchSemi = 0.0f;
@@ -160,20 +160,19 @@ struct ActiveVoice
     float decayDec = 0.001f;
     float sustainLvl = 0.85f;
     float releaseDec = 0.001f;
-    float driveAmt = 1.0f;
     FastSVF filterL;
     FastSVF filterR;
 };
 
-class NoiseMu6ixRhythmAudioProcessor : public juce::AudioProcessor
+class RythmeAudioProcessor : public juce::AudioProcessor
 {
 public:
     static constexpr int numPaletteColours = 12;
     static juce::Colour getPaletteColour (int idx);
     static juce::String getPaletteColourName (int idx);
 
-    NoiseMu6ixRhythmAudioProcessor();
-    ~NoiseMu6ixRhythmAudioProcessor() override;
+    RythmeAudioProcessor();
+    ~RythmeAudioProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
@@ -183,7 +182,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "Noise Mu6ix Rhythm v1.1.1"; }
+    const juce::String getName() const override { return "RYTHME"; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -199,6 +198,7 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     int createEmptyGroup();
+    bool deleteSelectedGroup();
     bool isKeyswitchNote (int midiNote) const;
 
     int createEmptyZone (int key);
@@ -207,7 +207,9 @@ public:
     void deleteZone (int index);
     void deleteZones (std::vector<int> indices);
     void normalizeSelectedSample();
+    void resetSelectedZoneDefaults();
     void clearSelectedZoneRhythm();
+    float snapNormToZeroCrossing (int zoneIndex, float rawNorm) const;
 
     void triggerNote (int midiNote, float velocity);
     void releaseNote (int midiNote);
@@ -248,7 +250,6 @@ private:
     juce::AudioBuffer<float> groupScratchBuf;
     uint64_t rrSeedCounter = 1;
     float lastRrPitch = 0.0f;
-    std::array<int, 5> groupRRCounters {};
 
     std::array<float, 128> heldNotesVel {};
     double seqBarPhase = 0.0;
@@ -259,5 +260,5 @@ private:
     std::vector<RhythmEvent> createDefaultEvents() const;
     bool hasAnyHeldNote() const;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NoiseMu6ixRhythmAudioProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RythmeAudioProcessor)
 };

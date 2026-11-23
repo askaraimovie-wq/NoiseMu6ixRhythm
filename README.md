@@ -1,8 +1,13 @@
-# Noise Mu6ix Rhythm v1.1.1 (Clean Simple Edition)
+# RYTHME v1.2.0 (VST3)
 
-- **MAIN பேஜ்:** View-Only Key Map + Rhythm Sequencer (`PLAY/PAUSE`, `SYNC`, `BPM`, `Grid`, `LOOP`, `Clr`).
-- **EDIT பேஜ் (ஒரே திரையில் சுத்தமாக):**
-  - **Group Strip:** `+ Grp`, Group தேர்வு, Rename, `M` (Mute), `RR` (Off / 1–4), `KS` (Keyswitch), `G.Vol`, `G.Pan`.
-  - **Key Mapper:** `FRR`, `FVL`, `PITCH`, `ALL`, `Del` (அல்லது `Delete`/`Backspace`), `Auto Grid`, `Vel Grid`, `Color`, Box-Drag Multi-Select, Right-Click Piano = Root Key.
-  - **Wave Editor:** `Track 1..N`, `RR`, `LOOP`, `REV`, `NORM`, `S/E/LS/LE` மார்க்கர்கள் + 13 Per-Zone நாப்கள்.
-  - **Simple FX Strip:** 4 ஸ்லாட்கள் (`EQ`, `Comp`, `Sat`, `Delay`, `Reverb`) + 3 நாப்கள் (0% Idle CPU).
+## இந்த வெர்ஷனில் செய்துள்ள முழு மாற்றங்கள்:
+1. **N6 லோகோ & RYTHME டைட்டில்:**
+   - மேல் இடது மூலையில் **`N6`** லோகோ மற்றும் **`RYTHME`** (CAPITAL) டைட்டில் அமைக்கப்பட்டுள்ளது (கிளிக் செய்தால் UI Zoom 50%–125% மெனு வரும்).
+   - அதற்குக் கீழே **`+ ADD LIBRARY`**, **`A-Z`**, **`DEL`** பட்டன்களும், Native Instruments ஸ்டைல் Library பாக்ஸும் உள்ளன.
+   - மேல் வரிசையில் பழைய டைட்டில் இருந்த இடத்தில் **`MAIN`** மற்றும் **`EDIT`** பட்டன்கள் வைக்கப்பட்டுள்ளன.
+2. **MAIN பக்கம்:**
+   - `KEY MAP (VIEW ONLY)` எழுத்து நீக்கப்பட்டு Key Map மேலே ஏற்றப்பட்டுள்ளது; **`RHYTHM SEQUENCER`** பெரிய எழுத்தில் மேலே நகர்த்தப்பட்டு பெரிய Sequencer கட்டம் கொடுக்கப்பட்டுள்ளது.
+3. **EDIT பக்கம் (Scrollable & Uniform Switches):**
+   - **Group Strip:** `+ Grp`, **`Del Grp`** (குறைந்தது 1 குரூப் பாதுகாப்பாக இருக்கும்), Rename, `M` (Mute), `KS` (Keyswitch), மற்றும் வலதுபுறத்தில் **Vertical Volume & Pan Faders**.
+   - **Key Mapper:** `FVL` நீக்கப்பட்டு, `FRR`, `PITCH`, `ALL`, `Del`, `Auto Grid` அனைத்தும் ஒரே சீரான சுவிட்ச்/பட்டன்களாக மாற்றப்பட்டுள்ளன; நீங்கள் ரெக்கார்ட் செய்யும் Velocity Layers துல்லியமாக வேலை செய்யும்.
+   - **Wave Editor:** சாம்பிளின் பெயர் மட்டுமே நேரடியாகத் தெரியும் (`Track 1:` நீக்கம்), **`Play`**, `RR`, `LOOP` (ஆன் செய்தால் `LS`/`LE` மார்க்கர்கள் தெளிவாகத் தெரியும்), **`Z-Cross`** (Zero-Crossing Snap), `REV`, `NORM`, **`Reset`**, மற்றும் 2 வரிசை பெரிய நாப்கள் + 4 FX ஸ்லாட்கள் (`EQ`, `Comp`, `Sat`, `Delay`, `Reverb`).

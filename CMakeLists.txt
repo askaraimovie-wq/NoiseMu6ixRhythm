@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(NoiseMu6ixRhythm VERSION 1.1.1)
+project(RYTHME VERSION 1.2.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,7 +13,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(JUCE)
 
-juce_add_plugin(NoiseMu6ixRhythm
+juce_add_plugin(RYTHME
     COMPANY_NAME "Noise Mu6ix Studio"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
@@ -22,12 +22,12 @@ juce_add_plugin(NoiseMu6ixRhythm
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD FALSE
     PLUGIN_MANUFACTURER_CODE Nm6x
-    PLUGIN_CODE Nmrh
+    PLUGIN_CODE Ryth
     FORMATS VST3
-    PRODUCT_NAME "Noise Mu6ix Rhythm v1.1.1"
+    PRODUCT_NAME "RYTHME"
 )
 
-target_sources(NoiseMu6ixRhythm
+target_sources(RYTHME
     PRIVATE
         PluginProcessor.cpp
         PluginProcessor.h
@@ -35,7 +35,7 @@ target_sources(NoiseMu6ixRhythm
         PluginEditor.h
 )
 
-target_compile_definitions(NoiseMu6ixRhythm
+target_compile_definitions(RYTHME
     PUBLIC
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
@@ -43,7 +43,7 @@ target_compile_definitions(NoiseMu6ixRhythm
         JUCE_DISPLAY_SPLASH_SCREEN=0
 )
 
-target_link_libraries(NoiseMu6ixRhythm
+target_link_libraries(RYTHME
     PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp

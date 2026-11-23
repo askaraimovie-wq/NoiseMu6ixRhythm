@@ -53,8 +53,8 @@ void SimpleFxSlot::processStereo (float* L, float* R, int numSamples, double sr)
 
     if (type == SimpleFxType::EQ)
     {
-        float lowHz = 60.0f + p1 * 540.0f;
-        float highHz = 1500.0f + p2 * 16500.0f;
+        float lowHz = 40.0f + p1 * 560.0f;
+        float highHz = 1200.0f + p2 * 18000.0f;
         float gain = 0.5f + p3 * 1.5f;
         fL.setParams (highHz, 0.707f, sr);
         fR.setParams (highHz, 0.707f, sr);
@@ -62,9 +62,9 @@ void SimpleFxSlot::processStereo (float* L, float* R, int numSamples, double sr)
         {
             float hpL = fL.processLP (L[i]) * gain;
             float hpR = fR.processLP (R[i]) * gain;
-            float lowAtt = juce::jlimit (0.1f, 1.0f, lowHz / 600.0f);
-            L[i] = hpL * (1.0f - lowAtt * 0.25f);
-            R[i] = hpR * (1.0f - lowAtt * 0.25f);
+            float lowAtt = juce::jlimit (0.0f, 0.35f, (lowHz - 40.0f) / 1600.0f);
+            L[i] = hpL * (1.0f - lowAtt);
+            R[i] = hpR * (1.0f - lowAtt);
         }
     }
     else if (type == SimpleFxType::Compressor)
@@ -125,7 +125,7 @@ void SimpleFxSlot::processStereo (float* L, float* R, int numSamples, double sr)
     }
 }
 
-juce::Colour NoiseMu6ixRhythmAudioProcessor::getPaletteColour (int idx)
+juce::Colour RythmeAudioProcessor::getPaletteColour (int idx)
 {
     static const juce::Colour palette[numPaletteColours] = {
         juce::Colour (0xff4ca3ff), // 0: Blue (Default)
@@ -144,7 +144,7 @@ juce::Colour NoiseMu6ixRhythmAudioProcessor::getPaletteColour (int idx)
     return palette[juce::jlimit (0, numPaletteColours - 1, idx)];
 }
 
-juce::String NoiseMu6ixRhythmAudioProcessor::getPaletteColourName (int idx)
+juce::String RythmeAudioProcessor::getPaletteColourName (int idx)
 {
     static const char* names[numPaletteColours] = {
         "Blue (Default)", "Pink", "Red", "Orange", "Amber", "Gold",
@@ -153,30 +153,28 @@ juce::String NoiseMu6ixRhythmAudioProcessor::getPaletteColourName (int idx)
     return names[juce::jlimit (0, numPaletteColours - 1, idx)];
 }
 
-NoiseMu6ixRhythmAudioProcessor::NoiseMu6ixRhythmAudioProcessor()
+RythmeAudioProcessor::RythmeAudioProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMETERS", createParameterLayout())
 {
     formatManager.registerBasicFormats();
     heldNotesVel.fill (0.0f);
-    groupRRCounters.fill (0);
     groups.emplace_back();
     selectedGroupIndex = 0;
 }
 
-NoiseMu6ixRhythmAudioProcessor::~NoiseMu6ixRhythmAudioProcessor() = default;
+RythmeAudioProcessor::~RythmeAudioProcessor() = default;
 
-std::vector<RhythmEvent> NoiseMu6ixRhythmAudioProcessor::createDefaultEvents() const
+std::vector<RhythmEvent> RythmeAudioProcessor::createDefaultEvents() const
 {
     return { { 0.000f, 0.95f }, { 0.250f, 0.85f }, { 0.500f, 0.95f }, { 0.750f, 0.85f } };
 }
 
-juce::AudioProcessorValueTreeState::ParameterLayout NoiseMu6ixRhythmAudioProcessor::createParameterLayout()
+juce::AudioProcessorValueTreeState::ParameterLayout RythmeAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
     params.push_back (std::make_unique<juce::AudioParameterBool> ("frr", "FRR (Fake Round Robin)", false));
-    params.push_back (std::make_unique<juce::AudioParameterBool> ("fvl", "FVL (Fake Velocity Layer)", false));
     params.push_back (std::make_unique<juce::AudioParameterBool> ("pitchTrack", "Pitch Track (Keys)", false));
     params.push_back (std::make_unique<juce::AudioParameterBool> ("seqLoop", "Rhythm Loop", false));
     params.push_back (std::make_unique<juce::AudioParameterBool> ("hostSync", "DAW Sync", true));
@@ -193,7 +191,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout NoiseMu6ixRhythmAudioProcess
     return { params.begin(), params.end() };
 }
 
-int NoiseMu6ixRhythmAudioProcessor::getGridDivisions() const
+int RythmeAudioProcessor::getGridDivisions() const
 {
     int idx = static_cast<int> (apvts.getRawParameterValue ("grid")->load());
     switch (idx)
@@ -210,7 +208,7 @@ int NoiseMu6ixRhythmAudioProcessor::getGridDivisions() const
     }
 }
 
-void NoiseMu6ixRhythmAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+void RythmeAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     currentSampleRate = sampleRate;
     groupScratchBuf.setSize (2, std::max (512, samplesPerBlock));
@@ -228,14 +226,14 @@ void NoiseMu6ixRhythmAudioProcessor::prepareToPlay (double sampleRate, int sampl
             slot.prepare (sampleRate);
 }
 
-void NoiseMu6ixRhythmAudioProcessor::releaseResources() {}
+void RythmeAudioProcessor::releaseResources() {}
 
-bool NoiseMu6ixRhythmAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+bool RythmeAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
 }
 
-int NoiseMu6ixRhythmAudioProcessor::createEmptyGroup()
+int RythmeAudioProcessor::createEmptyGroup()
 {
     const juce::ScopedLock sl (zoneLock);
     int nextNum = static_cast<int> (groups.size()) + 1;
@@ -247,7 +245,28 @@ int NoiseMu6ixRhythmAudioProcessor::createEmptyGroup()
     return selectedGroupIndex;
 }
 
-bool NoiseMu6ixRhythmAudioProcessor::isKeyswitchNote (int midiNote) const
+bool RythmeAudioProcessor::deleteSelectedGroup()
+{
+    const juce::ScopedLock sl (zoneLock);
+    // Safe guard: keep at least 1 group
+    if (groups.size() <= 1 || selectedGroupIndex < 0 || selectedGroupIndex >= static_cast<int> (groups.size()))
+        return false;
+
+    int delIdx = selectedGroupIndex;
+    for (int i = static_cast<int> (zones.size()) - 1; i >= 0; --i)
+    {
+        if (zones[static_cast<size_t> (i)].groupIndex == delIdx)
+            deleteZone (i);
+        else if (zones[static_cast<size_t> (i)].groupIndex > delIdx)
+            zones[static_cast<size_t> (i)].groupIndex--;
+    }
+
+    groups.erase (groups.begin() + delIdx);
+    selectedGroupIndex = juce::jlimit (0, static_cast<int> (groups.size()) - 1, delIdx - 1);
+    return true;
+}
+
+bool RythmeAudioProcessor::isKeyswitchNote (int midiNote) const
 {
     for (const auto& g : groups)
         if (g.keyswitchNote >= 0 && g.keyswitchNote == midiNote)
@@ -255,7 +274,7 @@ bool NoiseMu6ixRhythmAudioProcessor::isKeyswitchNote (int midiNote) const
     return false;
 }
 
-int NoiseMu6ixRhythmAudioProcessor::createEmptyZone (int key)
+int RythmeAudioProcessor::createEmptyZone (int key)
 {
     const juce::ScopedLock sl (zoneLock);
     if (groups.empty())
@@ -273,6 +292,7 @@ int NoiseMu6ixRhythmAudioProcessor::createEmptyZone (int key)
     z.lowVel = 0;
     z.highVel = 127;
     z.realRREnabled = true;
+    z.autoZeroCross = true;
     z.seqEvents = createDefaultEvents();
     z.colourIndex = 0;
     z.colour = getPaletteColour (0);
@@ -281,7 +301,7 @@ int NoiseMu6ixRhythmAudioProcessor::createEmptyZone (int key)
     return selectedZoneIndex;
 }
 
-bool NoiseMu6ixRhythmAudioProcessor::addSampleToZone (int zoneIndex, const juce::File& file)
+bool RythmeAudioProcessor::addSampleToZone (int zoneIndex, const juce::File& file)
 {
     std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
     if (reader == nullptr)
@@ -308,7 +328,7 @@ bool NoiseMu6ixRhythmAudioProcessor::addSampleToZone (int zoneIndex, const juce:
     return true;
 }
 
-bool NoiseMu6ixRhythmAudioProcessor::loadSampleIntoNewZone (const juce::File& file, int lowKey, int highKey, int rootKey, int lowVel, int highVel)
+bool RythmeAudioProcessor::loadSampleIntoNewZone (const juce::File& file, int lowKey, int highKey, int rootKey, int lowVel, int highVel)
 {
     int idx = createEmptyZone (rootKey);
     {
@@ -323,7 +343,7 @@ bool NoiseMu6ixRhythmAudioProcessor::loadSampleIntoNewZone (const juce::File& fi
     return addSampleToZone (idx, file);
 }
 
-void NoiseMu6ixRhythmAudioProcessor::deleteZone (int index)
+void RythmeAudioProcessor::deleteZone (int index)
 {
     const juce::ScopedLock sl (zoneLock);
     if (index >= 0 && index < static_cast<int> (zones.size()))
@@ -339,7 +359,7 @@ void NoiseMu6ixRhythmAudioProcessor::deleteZone (int index)
     }
 }
 
-void NoiseMu6ixRhythmAudioProcessor::deleteZones (std::vector<int> indices)
+void RythmeAudioProcessor::deleteZones (std::vector<int> indices)
 {
     std::sort (indices.begin(), indices.end(), std::greater<int>());
     indices.erase (std::unique (indices.begin(), indices.end()), indices.end());
@@ -347,7 +367,7 @@ void NoiseMu6ixRhythmAudioProcessor::deleteZones (std::vector<int> indices)
         deleteZone (idx);
 }
 
-void NoiseMu6ixRhythmAudioProcessor::normalizeSelectedSample()
+void RythmeAudioProcessor::normalizeSelectedSample()
 {
     const juce::ScopedLock sl (zoneLock);
     if (selectedZoneIndex < 0 || selectedZoneIndex >= static_cast<int> (zones.size())) return;
@@ -360,14 +380,62 @@ void NoiseMu6ixRhythmAudioProcessor::normalizeSelectedSample()
         buf.applyGain (0.98f / peak);
 }
 
-void NoiseMu6ixRhythmAudioProcessor::clearSelectedZoneRhythm()
+void RythmeAudioProcessor::resetSelectedZoneDefaults()
+{
+    const juce::ScopedLock sl (zoneLock);
+    if (selectedZoneIndex < 0 || selectedZoneIndex >= static_cast<int> (zones.size())) return;
+    auto& z = zones[static_cast<size_t> (selectedZoneIndex)];
+    z.startNorm = 0.0f;
+    z.endNorm = 1.0f;
+    z.loopStartNorm = 0.15f;
+    z.loopEndNorm = 0.85f;
+    z.pitchSemi = 0.0f;
+    z.pan = 0.0f;
+    z.volume = 1.0f;
+    z.attackSec = 0.005f;
+    z.decaySec = 0.30f;
+    z.sustainLvl = 0.85f;
+    z.releaseSec = 0.25f;
+    z.cutoffHz = 18000.0f;
+    z.resQ = 0.707f;
+}
+
+void RythmeAudioProcessor::clearSelectedZoneRhythm()
 {
     const juce::ScopedLock sl (zoneLock);
     if (selectedZoneIndex >= 0 && selectedZoneIndex < static_cast<int> (zones.size()))
         zones[static_cast<size_t> (selectedZoneIndex)].seqEvents.clear();
 }
 
-bool NoiseMu6ixRhythmAudioProcessor::isGroupActiveForNote (int groupIdx) const
+float RythmeAudioProcessor::snapNormToZeroCrossing (int zoneIndex, float rawNorm) const
+{
+    rawNorm = juce::jlimit (0.0f, 1.0f, rawNorm);
+    if (zoneIndex < 0 || zoneIndex >= static_cast<int> (zones.size()))
+        return rawNorm;
+    const auto& z = zones[static_cast<size_t> (zoneIndex)];
+    if (! z.autoZeroCross || z.layers.empty())
+        return rawNorm;
+
+    int lIdx = juce::jlimit (0, static_cast<int> (z.layers.size()) - 1, z.selectedLayerIndex);
+    const auto& buf = z.layers[static_cast<size_t> (lIdx)].buffer;
+    int total = buf.getNumSamples();
+    if (total < 16) return rawNorm;
+
+    const float* d = buf.getReadPointer (0);
+    int target = juce::jlimit (1, total - 2, static_cast<int> (rawNorm * total));
+    int searchRadius = std::min (512, total / 8);
+
+    for (int off = 0; off < searchRadius; ++off)
+    {
+        if (target + off < total - 1 && (d[target + off] * d[target + off + 1] <= 0.0f))
+            return static_cast<float> (target + off) / static_cast<float> (total);
+        if (target - off > 1 && (d[target - off] * d[target - off - 1] <= 0.0f))
+            return static_cast<float> (target - off) / static_cast<float> (total);
+    }
+    return rawNorm;
+}
+
+bool RythmeAudioProcessor::isGroupActiveForNote (int groupIdx) const
 {
     if (groupIdx < 0 || groupIdx >= static_cast<int> (groups.size()))
         return false;
@@ -390,7 +458,7 @@ bool NoiseMu6ixRhythmAudioProcessor::isGroupActiveForNote (int groupIdx) const
     return true;
 }
 
-void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, float velocity)
+void RythmeAudioProcessor::startVoice (int zoneIdx, int midiNote, float velocity)
 {
     auto& z = zones[static_cast<size_t> (zoneIdx)];
     if (! isGroupActiveForNote (z.groupIndex))
@@ -431,7 +499,6 @@ void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, floa
     v.playingReverse = z.reverse;
 
     bool frrOn = (apvts.getRawParameterValue ("frr")->load() > 0.5f) && (z.layers.size() == 1);
-    bool fvlOn = apvts.getRawParameterValue ("fvl")->load() > 0.5f;
     bool pitchTrackOn = apvts.getRawParameterValue ("pitchTrack")->load() > 0.5f;
     float velRandAmt = apvts.getRawParameterValue ("velRand")->load();
 
@@ -461,22 +528,10 @@ void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, floa
         rrExtraAttackSec = u3 * 0.0045f;
     }
 
-    float fvlCutoff = z.cutoffHz;
-    float gain = v.velocity;
-    float fvlExtraAttackSec = 0.0f;
-    v.driveAmt = 1.0f;
+    // True Velocity Response (natural velocity scaling for recorded velocity layers)
+    float gain = std::pow (v.velocity, 1.15f);
 
-    if (fvlOn)
-    {
-        float vel = v.velocity;
-        float velCurve = std::pow (vel, 1.75f);
-        fvlCutoff = juce::jlimit (280.0f, 20000.0f, 320.0f + (z.cutoffHz - 320.0f) * velCurve);
-        gain = 0.16f + 0.84f * velCurve;
-        fvlExtraAttackSec = (1.0f - vel) * (1.0f - vel) * 0.014f;
-        v.driveAmt = 1.0f + std::max (0.0f, vel - 0.55f) * 2.4f;
-    }
-
-    float totalAttackSec = std::max (0.0005f, z.attackSec + rrExtraAttackSec + fvlExtraAttackSec);
+    float totalAttackSec = std::max (0.0005f, z.attackSec + rrExtraAttackSec);
     v.attackInc = 1.0f / std::max (1.0f, static_cast<float> (totalAttackSec * currentSampleRate));
     v.decayDec = 1.0f / std::max (1.0f, static_cast<float> (z.decaySec * currentSampleRate));
     v.sustainLvl = z.sustainLvl;
@@ -499,12 +554,12 @@ void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, floa
 
     v.filterL.reset();
     v.filterR.reset();
-    float finalCut = juce::jlimit (80.0f, 20000.0f, fvlCutoff * rrFilterMult);
+    float finalCut = juce::jlimit (80.0f, 20000.0f, z.cutoffHz * rrFilterMult);
     v.filterL.setParams (finalCut, z.resQ, currentSampleRate);
     v.filterR.setParams (finalCut, z.resQ, currentSampleRate);
 }
 
-void NoiseMu6ixRhythmAudioProcessor::triggerNote (int midiNote, float velocity)
+void RythmeAudioProcessor::triggerNote (int midiNote, float velocity)
 {
     lastPlayedNote.store (midiNote);
     const juce::ScopedLock sl (zoneLock);
@@ -521,41 +576,17 @@ void NoiseMu6ixRhythmAudioProcessor::triggerNote (int midiNote, float velocity)
         return;
     }
 
-    int velInt = juce::jlimit (0, 127, static_cast<int> (velocity * 127.0f));
-
-    std::array<int, 5> chosenRRGroup;
-    chosenRRGroup.fill (-1);
-    for (int rrSet = 1; rrSet <= 4; ++rrSet)
-    {
-        std::vector<int> candidates;
-        for (int gIdx = 0; gIdx < static_cast<int> (groups.size()); ++gIdx)
-            if (groups[static_cast<size_t> (gIdx)].rrSetId == rrSet && isGroupActiveForNote (gIdx))
-                candidates.push_back (gIdx);
-        if (! candidates.empty())
-        {
-            int pick = groupRRCounters[static_cast<size_t> (rrSet)] % static_cast<int> (candidates.size());
-            groupRRCounters[static_cast<size_t> (rrSet)] = (pick + 1) % static_cast<int> (candidates.size());
-            chosenRRGroup[static_cast<size_t> (rrSet)] = candidates[static_cast<size_t> (pick)];
-        }
-    }
+    int velInt = juce::jlimit (0, 127, static_cast<int> (std::round (velocity * 127.0f)));
 
     for (int i = 0; i < static_cast<int> (zones.size()); ++i)
     {
         const auto& z = zones[static_cast<size_t> (i)];
         if (midiNote >= z.lowKey && midiNote <= z.highKey && velInt >= z.lowVel && velInt <= z.highVel)
-        {
-            if (z.groupIndex >= 0 && z.groupIndex < static_cast<int> (groups.size()))
-            {
-                int rrSet = groups[static_cast<size_t> (z.groupIndex)].rrSetId;
-                if (rrSet >= 1 && rrSet <= 4 && chosenRRGroup[static_cast<size_t> (rrSet)] != z.groupIndex)
-                    continue;
-            }
             startVoice (i, midiNote, velocity);
-        }
     }
 }
 
-void NoiseMu6ixRhythmAudioProcessor::releaseNote (int midiNote)
+void RythmeAudioProcessor::releaseNote (int midiNote)
 {
     if (lastPlayedNote.load() == midiNote)
         lastPlayedNote.store (-1);
@@ -564,14 +595,14 @@ void NoiseMu6ixRhythmAudioProcessor::releaseNote (int midiNote)
             v.envStage = 3;
 }
 
-bool NoiseMu6ixRhythmAudioProcessor::hasAnyHeldNote() const
+bool RythmeAudioProcessor::hasAnyHeldNote() const
 {
     for (float v : heldNotesVel)
         if (v > 0.0f) return true;
     return false;
 }
 
-void NoiseMu6ixRhythmAudioProcessor::uiNoteOn (int midiNote, float velocity)
+void RythmeAudioProcessor::uiNoteOn (int midiNote, float velocity)
 {
     {
         const juce::ScopedLock sl (zoneLock);
@@ -614,14 +645,14 @@ void NoiseMu6ixRhythmAudioProcessor::uiNoteOn (int midiNote, float velocity)
     }
 }
 
-void NoiseMu6ixRhythmAudioProcessor::uiNoteOff (int midiNote)
+void RythmeAudioProcessor::uiNoteOff (int midiNote)
 {
     if (midiNote >= 0 && midiNote < 128)
         heldNotesVel[static_cast<size_t> (midiNote)] = 0.0f;
     releaseNote (midiNote);
 }
 
-void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
@@ -818,11 +849,6 @@ void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
 
                     sL = v.filterL.processLP (sL);
                     sR = v.filterR.processLP (sR);
-                    if (v.driveAmt > 1.01f)
-                    {
-                        sL = std::tanh (sL * v.driveAmt) / std::tanh (v.driveAmt);
-                        sR = std::tanh (sR * v.driveAmt) / std::tanh (v.driveAmt);
-                    }
 
                     gL[i] += sL * v.envVal * v.gainL;
                     gR[i] += sR * v.envVal * v.gainR;
@@ -846,7 +872,7 @@ void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
     }
 }
 
-bool NoiseMu6ixRhythmAudioProcessor::savePresetMn6x (const juce::File& file)
+bool RythmeAudioProcessor::savePresetMn6x (const juce::File& file)
 {
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
@@ -859,7 +885,6 @@ bool NoiseMu6ixRhythmAudioProcessor::savePresetMn6x (const juce::File& file)
         auto* gx = groupsXml->createNewChildElement ("GROUP");
         gx->setAttribute ("name", g.name);
         gx->setAttribute ("muted", g.muted ? 1 : 0);
-        gx->setAttribute ("rrSet", g.rrSetId);
         gx->setAttribute ("ksNote", g.keyswitchNote);
         gx->setAttribute ("vol", g.volume);
         gx->setAttribute ("pan", g.pan);
@@ -893,6 +918,7 @@ bool NoiseMu6ixRhythmAudioProcessor::savePresetMn6x (const juce::File& file)
         zx->setAttribute ("lStart", z.loopStartNorm);
         zx->setAttribute ("lEnd", z.loopEndNorm);
         zx->setAttribute ("sLoop", z.sampleLoop ? 1 : 0);
+        zx->setAttribute ("zCross", z.autoZeroCross ? 1 : 0);
         zx->setAttribute ("rev", z.reverse ? 1 : 0);
         zx->setAttribute ("pitch", z.pitchSemi);
         zx->setAttribute ("pan", z.pan);
@@ -924,7 +950,7 @@ bool NoiseMu6ixRhythmAudioProcessor::savePresetMn6x (const juce::File& file)
     return xml->writeTo (file);
 }
 
-bool NoiseMu6ixRhythmAudioProcessor::loadPresetMn6x (const juce::File& file)
+bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
 {
     auto xml = juce::XmlDocument::parse (file);
     if (xml == nullptr) return false;
@@ -942,7 +968,6 @@ bool NoiseMu6ixRhythmAudioProcessor::loadPresetMn6x (const juce::File& file)
             SampleGroup g;
             g.name = gx->getStringAttribute ("name", "Group");
             g.muted = gx->getIntAttribute ("muted", 0) != 0;
-            g.rrSetId = gx->getIntAttribute ("rrSet", 0);
             g.keyswitchNote = gx->getIntAttribute ("ksNote", -1);
             g.volume = static_cast<float> (gx->getDoubleAttribute ("vol", 1.0));
             g.pan = static_cast<float> (gx->getDoubleAttribute ("pan", 0.0));
@@ -994,6 +1019,7 @@ bool NoiseMu6ixRhythmAudioProcessor::loadPresetMn6x (const juce::File& file)
                 z.loopStartNorm = static_cast<float> (zx->getDoubleAttribute ("lStart", 0.15));
                 z.loopEndNorm = static_cast<float> (zx->getDoubleAttribute ("lEnd", 0.85));
                 z.sampleLoop = zx->getIntAttribute ("sLoop", 0) != 0;
+                z.autoZeroCross = zx->getIntAttribute ("zCross", 1) != 0;
                 z.reverse = zx->getIntAttribute ("rev", 0) != 0;
                 z.pitchSemi = static_cast<float> (zx->getDoubleAttribute ("pitch", 0.0));
                 z.pan = static_cast<float> (zx->getDoubleAttribute ("pan", 0.0));
@@ -1031,26 +1057,26 @@ bool NoiseMu6ixRhythmAudioProcessor::loadPresetMn6x (const juce::File& file)
     return true;
 }
 
-void NoiseMu6ixRhythmAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
+void RythmeAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
     copyXmlToBinary (*xml, destData);
 }
 
-void NoiseMu6ixRhythmAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
+void RythmeAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
     if (xmlState != nullptr && xmlState->hasTagName (apvts.state.getType()))
         apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
 }
 
-juce::AudioProcessorEditor* NoiseMu6ixRhythmAudioProcessor::createEditor()
+juce::AudioProcessorEditor* RythmeAudioProcessor::createEditor()
 {
-    return new NoiseMu6ixRhythmAudioProcessorEditor (*this);
+    return new RythmeAudioProcessorEditor (*this);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
-    return new NoiseMu6ixRhythmAudioProcessor();
+    return new RythmeAudioProcessor();
 }
