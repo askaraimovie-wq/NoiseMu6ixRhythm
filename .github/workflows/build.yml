@@ -1,0 +1,26 @@
+name: Build Noise Mu6ix Rhythm VST3
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-windows-vst3:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build VST3 Plugin
+        run: cmake --build build --config Release --target NoiseMu6ixRhythm_VST3 --parallel
+
+      - name: Upload VST3 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Noise-Mu6ix-Rhythm-v1.0.1-Windows-VST3
+          path: build/NoiseMu6ixRhythm_artefacts/Release/VST3/Noise Mu6ix Rhythm.vst3
