@@ -7,7 +7,7 @@
 #include <atomic>
 #include <cmath>
 
-// Ultra-lightweight, CPU-friendly, copyable Cytomic TPT SVF Filter
+// Lightweight CPU-friendly Cytomic TPT SVF Filter
 struct FastSVF
 {
     float ic1eq = 0.0f;
@@ -37,49 +37,6 @@ struct FastSVF
         ic2eq = 2.0f * v2 - ic2eq;
         return v2;
     }
-
-    inline float processHP (float v0)
-    {
-        float v3 = v0 - ic2eq;
-        float v1 = a1 * ic1eq + a2 * v3;
-        float v2 = ic2eq + a2 * ic1eq + a3 * v3;
-        ic1eq = 2.0f * v1 - ic1eq;
-        ic2eq = 2.0f * v2 - ic2eq;
-        return v0 - k * v1 - v2;
-    }
-};
-
-enum class FxType
-{
-    None = 0,
-    EQ,
-    Compressor,
-    Drive,
-    Filter,
-    Delay,
-    Reverb,
-    Width
-};
-
-struct InsertEffect
-{
-    FxType type = FxType::None;
-    bool enabled = true;
-    float p1 = 0.5f; // Primary param (e.g. Low/Thresh/Drive/Cutoff/Time/Size/Width)
-    float p2 = 0.5f; // Secondary param (e.g. High/Ratio/Tone/Res/Feedback/Damp/Gain)
-    float p3 = 0.5f; // Mix / Output
-
-    // Lightweight DSP state (allocated lazily only for Delay/Reverb)
-    FastSVF fL1, fR1, fL2, fR2;
-    float envFollow = 0.0f;
-    std::vector<float> delayBufL, delayBufR;
-    int delayWritePos = 0;
-
-    void prepare (double sr);
-    void reset();
-    void processStereo (float* L, float* R, int numSamples, double sr);
-    static juce::String getTypeName (FxType t);
-    static juce::String getParamName (FxType t, int idx);
 };
 
 struct RhythmEvent
@@ -106,7 +63,7 @@ struct SampleZone
     int highVel = 127;
     juce::Colour colour { 0xffd9538f };
 
-    // Per-Zone Independent Sample Wave Editor Parameters!
+    // Per-Zone Independent Sample Wave Editor Parameters
     float startNorm = 0.0f;
     float endNorm = 1.0f;
     float loopStartNorm = 0.15f;
@@ -121,12 +78,6 @@ struct SampleZone
     float releaseSec = 0.25f;
     float cutoffHz = 18000.0f;
     float resQ = 0.707f;
-
-    // Mixer Controls (Volume/Pan shared with zone + Mute/Solo + Multi-Out + Unlimited Insert FX)
-    bool muted = false;
-    bool soloed = false;
-    int outputBusIndex = 0; // 0 = Out 1 .. 7 = Out 8
-    std::vector<InsertEffect> channelFx;
 
     // Multi-sample Real Round Robin layers
     std::vector<SampleLayer> layers;
@@ -162,9 +113,6 @@ struct ActiveVoice
 class NoiseMu6ixRhythmAudioProcessor : public juce::AudioProcessor
 {
 public:
-    static constexpr int numOutputBuses = 8;
-    static constexpr int numGlobalFxSlots = 8;
-
     NoiseMu6ixRhythmAudioProcessor();
     ~NoiseMu6ixRhythmAudioProcessor() override;
 
@@ -176,7 +124,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "Noise Mu6ix Rhythm v1.0.4"; }
+    const juce::String getName() const override { return "Noise Mu6ix Rhythm v1.0.5"; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -195,8 +143,6 @@ public:
     bool addSampleToZone (int zoneIndex, const juce::File& file);
     bool loadSampleIntoNewZone (const juce::File& file, int lowKey, int highKey, int rootKey, int lowVel = 0, int highVel = 127);
     void deleteZone (int index);
-    void addChannelFxToZone (int zoneIndex, FxType type);
-    void removeChannelFxFromZone (int zoneIndex, int fxIndex);
 
     void triggerNote (int midiNote, float velocity);
     void releaseNote (int midiNote);
@@ -207,7 +153,6 @@ public:
     bool loadPresetMn6x (const juce::File& file);
 
     int getGridDivisions() const;
-    double getCurrentSampleRate() const { return currentSampleRate; }
 
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -216,14 +161,12 @@ public:
     std::vector<SampleZone> zones;
     int selectedZoneIndex = -1;
 
-    // 8 Global Master FX Insert Slots (CPU-friendly: bypassed/None slots cost 0 CPU)
-    std::array<InsertEffect, numGlobalFxSlots> globalFx;
-
     std::atomic<float> seqPlayheadNorm { 0.0f };
     std::atomic<int> lastPlayedNote { -1 };
     std::atomic<bool> internalPlaying { false };
 
-    juce::String currentPresetName { "Rhythm Section 1" };
+    // Starts empty so user can click and type their own preset name
+    juce::String currentPresetName { "" };
     juce::File currentPresetFile;
 
 private:
@@ -232,9 +175,6 @@ private:
     std::array<ActiveVoice, maxVoices> voices;
     double currentSampleRate = 44100.0;
     juce::Random rng;
-
-    // Pre-allocated scratch buffer for per-zone mixer channel FX (zero audio-thread allocations)
-    juce::AudioBuffer<float> zoneScratchBuffer;
 
     uint64_t rrSeedCounter = 1;
     float lastRrPitch = 0.0f;

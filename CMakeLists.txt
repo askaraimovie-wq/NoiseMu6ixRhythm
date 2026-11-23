@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(NoiseMu6ixRhythm VERSION 1.0.4)
+project(NoiseMu6ixRhythm VERSION 1.0.5)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -24,7 +24,7 @@ juce_add_plugin(NoiseMu6ixRhythm
     PLUGIN_MANUFACTURER_CODE Nm6x
     PLUGIN_CODE Nmrh
     FORMATS VST3
-    PRODUCT_NAME "Noise Mu6ix Rhythm v1.0.4"
+    PRODUCT_NAME "Noise Mu6ix Rhythm v1.0.5"
 )
 
 target_sources(NoiseMu6ixRhythm
