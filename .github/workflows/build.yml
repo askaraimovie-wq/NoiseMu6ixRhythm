@@ -23,4 +23,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Noise-Mu6ix-Rhythm-v1.0.1-Windows-VST3
-          path: build/NoiseMu6ixRhythm_artefacts/Release/VST3/Noise Mu6ix Rhythm.vst3
+          path: build/NoiseMu6ixRhythm_artefacts/Release/VST3/*.vst3
