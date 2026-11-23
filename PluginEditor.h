@@ -2,6 +2,8 @@
 #include "PluginProcessor.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <functional>
+#include <set>
+#include <vector>
 
 class LabeledKnob : public juce::Component
 {
@@ -28,7 +30,10 @@ private:
     int pressedNote = -1;
 };
 
-// 10-Octave Key Mapper: Read-Only on MAIN tab; Large + Velocity Grid + Direct Left-Click Root Key on EDIT tab
+// 10-Octave Key Mapper:
+// - Read-Only on MAIN tab
+// - Full Edit on EDIT tab: NO double-click empty slot, Right-Click ONLY for Root Key,
+//   Marquee Box Multi-Select + Select All + Group Drag, Velocity Grid up to 64
 class KeyMapperComponent : public juce::Component
 {
 public:
@@ -37,14 +42,17 @@ public:
     void setVelocityGridDivisions (int divs) { velGridDivs = divs; repaint(); }
     bool isReadOnly() const { return readOnly; }
 
+    void selectAllZones();
+    void clearSelection();
+    void selectSingleZone (int idx);
+    const std::set<int>& getSelectedZoneIndices() const { return selectedZoneIndices; }
+
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
-    void mouseDoubleClick (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
 
     int noteAtX (int x) const;
-    std::function<void(int)> onDoubleClickKey;
     std::function<void()> onSelectionChanged;
 
 private:
@@ -53,19 +61,34 @@ private:
     static constexpr int numKeys = 121;
 
     bool readOnly = true;
-    int velGridDivs = 4; // 0 = Free, 2, 4, 8, 16 velocity grid lines
+    int velGridDivs = 4; // 0 = Free, 2, 4, 8, 16, 32, 64
+
+    std::set<int> selectedZoneIndices;
+
+    // Marquee box selection state
+    bool isMarqueeDragging = false;
+    juce::Point<float> marqueeStart;
+    juce::Point<float> marqueeCurrent;
+
+    struct ZoneKeySnapshot
+    {
+        int index = 0;
+        int lowKey = 60;
+        int highKey = 60;
+    };
 
     enum class DragMode { None, Move, LeftEdge, RightEdge, TopEdge, BottomEdge };
     DragMode dragMode = DragMode::None;
     int dragZoneIdx = -1;
-    int dragStartNoteOffset = 0;
-    int origLowKey = 60, origHighKey = 60;
+    int dragStartNote = 60;
+    std::vector<ZoneKeySnapshot> dragSnapshots;
     int pressedKey = -1;
 
     juce::Rectangle<int> getGridArea() const;
     juce::Rectangle<int> getKeyboardArea() const;
     juce::Rectangle<float> getZoneRect (const SampleZone& z, juce::Rectangle<int> gridArea) const;
     int snapVelocity (int rawVel) const;
+    void sanitizeSelection();
 };
 
 class WaveEditorComponent : public juce::Component
@@ -117,6 +140,7 @@ public:
     void handleFilesDropped (const juce::StringArray& files, int localX, int localY);
     void syncPerZoneControls();
     void togglePlayPause();
+    void selectAllInEditTab();
     void repaintDynamicAreas();
 
 private:
@@ -143,19 +167,19 @@ private:
     juce::TextButton saveBtn { "SAVE" };
     juce::TextButton saveAsBtn { "SAVE AS" };
 
-    // MAIN Tab Components (View-Only KeyMapper + Full-Width Rhythm Sequencer)
+    // MAIN Tab Components
     KeyMapperComponent mainKeyMapper;
     RhythmSequencerComponent seqComp;
     juce::TextButton playPauseBtn { "PLAY" };
     juce::ToggleButton hostSyncBtn { "SYNC" };
     juce::Label bpmLabel;
-    juce::TextEditor bpmInputBox; // Typeable BPM box (no knob!)
+    juce::TextEditor bpmInputBox;
     LabeledKnob shuffleKnob { "Shuffle" }, timeRandKnob { "Time Rnd" }, velRandKnob { "Vel Rnd" };
     juce::Label gridLabel;
     juce::ComboBox gridBox;
-    juce::ToggleButton seqLoopBtn { "LOOP" }; // Placed next to Grid in bottom bar!
+    juce::ToggleButton seqLoopBtn { "LOOP" };
 
-    // EDIT Tab Scrollable Container (Large Key Map Editor + Sample Wave Editor)
+    // EDIT Tab Scrollable Container (Extra Large Key Map Editor + Sample Wave Editor)
     juce::Viewport editViewport;
     juce::Component editContent;
 
@@ -163,6 +187,7 @@ private:
     juce::ToggleButton frrBtn { "FRR" };
     juce::ToggleButton fvlBtn { "FVL" };
     juce::ToggleButton pitchTrackBtn { "PITCH" };
+    juce::TextButton selectAllZonesBtn { "ALL" };
     juce::ComboBox velGridBox;
     juce::ComboBox zoneColourBox;
     KeyMapperComponent editKeyMapper;

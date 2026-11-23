@@ -100,12 +100,53 @@ void ColorPianoStrip::mouseUp (const juce::MouseEvent&)
 // ---------------- 10-Octave KeyMapperComponent ----------------
 KeyMapperComponent::KeyMapperComponent (NoiseMu6ixRhythmAudioProcessor& p) : processor (p) {}
 
+void KeyMapperComponent::sanitizeSelection()
+{
+    int n = static_cast<int> (processor.zones.size());
+    for (auto it = selectedZoneIndices.begin(); it != selectedZoneIndices.end(); )
+    {
+        if (*it < 0 || *it >= n)
+            it = selectedZoneIndices.erase (it);
+        else
+            ++it;
+    }
+    if (selectedZoneIndices.empty() && processor.selectedZoneIndex >= 0 && processor.selectedZoneIndex < n)
+        selectedZoneIndices.insert (processor.selectedZoneIndex);
+}
+
+void KeyMapperComponent::selectAllZones()
+{
+    const juce::ScopedLock sl (processor.zoneLock);
+    selectedZoneIndices.clear();
+    int n = static_cast<int> (processor.zones.size());
+    for (int i = 0; i < n; ++i)
+        selectedZoneIndices.insert (i);
+    if (n > 0)
+        processor.selectedZoneIndex = n - 1;
+    if (onSelectionChanged) onSelectionChanged();
+    repaint();
+}
+
+void KeyMapperComponent::clearSelection()
+{
+    selectedZoneIndices.clear();
+    repaint();
+}
+
+void KeyMapperComponent::selectSingleZone (int idx)
+{
+    selectedZoneIndices.clear();
+    if (idx >= 0)
+        selectedZoneIndices.insert (idx);
+    repaint();
+}
+
 juce::Rectangle<int> KeyMapperComponent::getGridArea() const
 {
     auto r = getLocalBounds();
-    int leftPad = readOnly ? 0 : 28; // Space for Velocity axis numbers in EDIT mode
+    int leftPad = readOnly ? 0 : 28;
     r.removeFromLeft (leftPad);
-    return r.removeFromTop (r.getHeight() - (readOnly ? 26 : 34));
+    return r.removeFromTop (r.getHeight() - (readOnly ? 26 : 36));
 }
 
 juce::Rectangle<int> KeyMapperComponent::getKeyboardArea() const
@@ -113,7 +154,7 @@ juce::Rectangle<int> KeyMapperComponent::getKeyboardArea() const
     auto r = getLocalBounds();
     int leftPad = readOnly ? 0 : 28;
     r.removeFromLeft (leftPad);
-    return r.removeFromBottom (readOnly ? 26 : 34);
+    return r.removeFromBottom (readOnly ? 26 : 36);
 }
 
 int KeyMapperComponent::noteAtX (int x) const
@@ -140,7 +181,7 @@ juce::Rectangle<float> KeyMapperComponent::getZoneRect (const SampleZone& z, juc
     float x2 = gridArea.getX() + ((z.highKey - startNote + 1) / static_cast<float> (numKeys)) * gridArea.getWidth();
     float y1 = gridArea.getBottom() - (z.highVel / 127.0f) * gridArea.getHeight();
     float y2 = gridArea.getBottom() - (z.lowVel / 127.0f) * gridArea.getHeight();
-    return { x1, y1, std::max (8.0f, x2 - x1), std::max (10.0f, y2 - y1) };
+    return { x1, y1, std::max (8.0f, x2 - x1), std::max (8.0f, y2 - y1) };
 }
 
 void KeyMapperComponent::paint (juce::Graphics& g)
@@ -153,24 +194,26 @@ void KeyMapperComponent::paint (juce::Graphics& g)
     auto gridArea = getGridArea();
     auto keyArea = getKeyboardArea();
 
-    // Velocity Axis & Horizontal Grid Lines (Dynamic Velocity Grid in EDIT tab)
+    // Velocity Axis & Horizontal Grid Lines (supports up to 64 divisions cleanly)
     int divs = readOnly ? 4 : (velGridDivs > 0 ? velGridDivs : 4);
+    int labelStep = (divs <= 8) ? 1 : (divs <= 16 ? 2 : (divs <= 32 ? 4 : 8));
+    int majorStep = (divs <= 8) ? 1 : (divs / 8);
+
     for (int i = 0; i <= divs; ++i)
     {
         float norm = i / static_cast<float> (divs);
         int y = gridArea.getBottom() - static_cast<int> (norm * gridArea.getHeight());
-        g.setColour (readOnly ? juce::Colour (0xff222936) : juce::Colour (0xff2a3344));
+        bool isMajor = (i % std::max (1, majorStep) == 0);
+        g.setColour (readOnly ? juce::Colour (0xff222936)
+                              : (isMajor ? juce::Colour (0xff2d384a) : juce::Colour (0xff1e2531)));
         g.drawHorizontalLine (y, static_cast<float> (gridArea.getX()), static_cast<float> (gridArea.getRight()));
 
-        if (! readOnly)
+        if (! readOnly && (i % labelStep == 0 || i == divs))
         {
             int velVal = static_cast<int> (std::round (norm * 127.0f));
-            if (divs <= 8 || i % 2 == 0)
-            {
-                g.setColour (juce::Colour (0xff8a99b3));
-                g.setFont (8.5f);
-                g.drawText (juce::String (velVal), 2, y - 6, 24, 12, juce::Justification::centredRight, false);
-            }
+            g.setColour (juce::Colour (0xff8a99b3));
+            g.setFont (8.5f);
+            g.drawText (juce::String (velVal), 2, y - 6, 24, 12, juce::Justification::centredRight, false);
         }
     }
 
@@ -184,6 +227,7 @@ void KeyMapperComponent::paint (juce::Graphics& g)
     }
 
     const juce::ScopedLock sl (processor.zoneLock);
+    sanitizeSelection();
 
     if (processor.zones.empty())
     {
@@ -192,7 +236,7 @@ void KeyMapperComponent::paint (juce::Graphics& g)
         if (readOnly)
             g.drawText ("Key Map Overview (Switch to EDIT tab to add or edit samples)", gridArea, juce::Justification::centred);
         else
-            g.drawText ("Double-click any key for Empty Track | Drag edges to resize Key/Velocity | Click piano key below to set Root Key",
+            g.drawText ("Drag & Drop WAV/AIFF onto any key | Drag empty space to box-select multiple zones | Right-Click piano key to set Root Key",
                         gridArea, juce::Justification::centred);
     }
 
@@ -204,10 +248,13 @@ void KeyMapperComponent::paint (juce::Graphics& g)
     {
         const auto& z = processor.zones[static_cast<size_t> (i)];
         auto r = getZoneRect (z, gridArea);
-        g.setColour (z.colour.withAlpha (z.layers.empty() ? 0.35f : 0.72f));
+        bool isSelected = (! readOnly && selectedZoneIndices.count (i) > 0)
+                       || (readOnly && i == processor.selectedZoneIndex);
+
+        g.setColour (z.colour.withAlpha (isSelected ? 0.82f : 0.60f));
         g.fillRect (r);
-        g.setColour (i == processor.selectedZoneIndex ? juce::Colours::white : z.colour.brighter (0.3f));
-        g.drawRect (r, i == processor.selectedZoneIndex ? 2.0f : 1.0f);
+        g.setColour (isSelected ? juce::Colours::white : z.colour.brighter (0.25f));
+        g.drawRect (r, isSelected ? 2.0f : 1.0f);
 
         juce::String label = z.name;
         if (z.layers.size() > 1) label += " (" + juce::String (z.layers.size()) + "RR)";
@@ -218,6 +265,20 @@ void KeyMapperComponent::paint (juce::Graphics& g)
         g.setColour (juce::Colours::white);
         g.setFont (9.5f);
         g.drawText (label, r.reduced (3.0f, 1.0f), juce::Justification::topLeft, true);
+    }
+
+    // Draw Marquee Box Selection rectangle if dragging
+    if (! readOnly && isMarqueeDragging)
+    {
+        auto mr = juce::Rectangle<float>::leftTopRightBottom (
+            std::min (marqueeStart.x, marqueeCurrent.x),
+            std::min (marqueeStart.y, marqueeCurrent.y),
+            std::max (marqueeStart.x, marqueeCurrent.x),
+            std::max (marqueeStart.y, marqueeCurrent.y));
+        g.setColour (juce::Colour (0x305aa9ff));
+        g.fillRect (mr);
+        g.setColour (juce::Colour (0xff80c4ff));
+        g.drawRect (mr, 1.2f);
     }
 
     // Draw 10-octave horizontal keyboard
@@ -280,17 +341,27 @@ void KeyMapperComponent::mouseDown (const juce::MouseEvent& e)
     {
         int note = noteAtX (e.x);
 
-        // In EDIT tab: Left-Click OR Right-Click on the Key Mapper piano strip directly sets Root Key (no ROOT button needed!)
-        if (! readOnly)
+        // STRICTLY Right-Click ONLY sets Root Key (Left-Click ONLY plays the note!)
+        if (! readOnly && e.mods.isRightButtonDown())
         {
             const juce::ScopedLock sl (processor.zoneLock);
-            if (processor.selectedZoneIndex >= 0 && processor.selectedZoneIndex < static_cast<int> (processor.zones.size()))
+            sanitizeSelection();
+            if (! selectedZoneIndices.empty())
+            {
+                for (int idx : selectedZoneIndices)
+                    if (idx >= 0 && idx < static_cast<int> (processor.zones.size()))
+                        processor.zones[static_cast<size_t> (idx)].rootKey = note;
+            }
+            else if (processor.selectedZoneIndex >= 0 && processor.selectedZoneIndex < static_cast<int> (processor.zones.size()))
             {
                 processor.zones[static_cast<size_t> (processor.selectedZoneIndex)].rootKey = note;
-                if (onSelectionChanged) onSelectionChanged();
             }
+            if (onSelectionChanged) onSelectionChanged();
+            repaint();
+            return;
         }
 
+        // Left-Click -> audition note only
         pressedKey = note;
         processor.uiNoteOn (note, 0.9f);
         if (onSelectionChanged) onSelectionChanged();
@@ -299,8 +370,11 @@ void KeyMapperComponent::mouseDown (const juce::MouseEvent& e)
     }
 
     const juce::ScopedLock sl (processor.zoneLock);
+    sanitizeSelection();
     dragMode = DragMode::None;
     dragZoneIdx = -1;
+    dragSnapshots.clear();
+    isMarqueeDragging = false;
 
     for (int i = static_cast<int> (processor.zones.size()) - 1; i >= 0; --i)
     {
@@ -310,6 +384,8 @@ void KeyMapperComponent::mouseDown (const juce::MouseEvent& e)
             if (readOnly)
             {
                 processor.selectedZoneIndex = i;
+                selectedZoneIndices.clear();
+                selectedZoneIndices.insert (i);
                 if (onSelectionChanged) onSelectionChanged();
                 repaint();
                 return;
@@ -317,17 +393,47 @@ void KeyMapperComponent::mouseDown (const juce::MouseEvent& e)
 
             if (e.mods.isRightButtonDown())
             {
-                processor.deleteZone (i);
+                if (selectedZoneIndices.count (i) > 0 && selectedZoneIndices.size() > 1)
+                {
+                    std::vector<int> toDel (selectedZoneIndices.begin(), selectedZoneIndices.end());
+                    processor.deleteZones (toDel);
+                    selectedZoneIndices.clear();
+                }
+                else
+                {
+                    processor.deleteZone (i);
+                    selectedZoneIndices.clear();
+                }
                 if (onSelectionChanged) onSelectionChanged();
                 repaint();
                 return;
             }
 
+            if (e.mods.isShiftDown() || e.mods.isCommandDown())
+            {
+                if (selectedZoneIndices.count (i) > 0 && selectedZoneIndices.size() > 1)
+                    selectedZoneIndices.erase (i);
+                else
+                    selectedZoneIndices.insert (i);
+            }
+            else if (selectedZoneIndices.count (i) == 0)
+            {
+                selectedZoneIndices.clear();
+                selectedZoneIndices.insert (i);
+            }
+
             processor.selectedZoneIndex = i;
             dragZoneIdx = i;
-            origLowKey = processor.zones[static_cast<size_t> (i)].lowKey;
-            origHighKey = processor.zones[static_cast<size_t> (i)].highKey;
-            dragStartNoteOffset = noteAtX (e.x) - origLowKey;
+            dragStartNote = noteAtX (e.x);
+
+            for (int idx : selectedZoneIndices)
+            {
+                if (idx >= 0 && idx < static_cast<int> (processor.zones.size()))
+                {
+                    const auto& z = processor.zones[static_cast<size_t> (idx)];
+                    dragSnapshots.push_back ({ idx, z.lowKey, z.highKey });
+                }
+            }
 
             if (std::abs (e.position.x - r.getX()) <= 6.0f) dragMode = DragMode::LeftEdge;
             else if (std::abs (e.position.x - r.getRight()) <= 6.0f) dragMode = DragMode::RightEdge;
@@ -340,39 +446,114 @@ void KeyMapperComponent::mouseDown (const juce::MouseEvent& e)
             return;
         }
     }
-}
 
-void KeyMapperComponent::mouseDoubleClick (const juce::MouseEvent& e)
-{
-    if (readOnly) return;
-    int note = noteAtX (e.x);
-    if (onDoubleClickKey)
-        onDoubleClickKey (note);
+    // Clicked on empty space inside grid -> Start Marquee Box Multi-Selection!
+    if (! readOnly && ! e.mods.isRightButtonDown() && gridArea.contains (e.getPosition()))
+    {
+        if (! e.mods.isShiftDown() && ! e.mods.isCommandDown())
+            selectedZoneIndices.clear();
+        isMarqueeDragging = true;
+        marqueeStart = e.position;
+        marqueeCurrent = e.position;
+        repaint();
+    }
 }
 
 void KeyMapperComponent::mouseDrag (const juce::MouseEvent& e)
 {
-    if (readOnly || dragMode == DragMode::None || dragZoneIdx < 0) return;
+    if (readOnly) return;
 
     auto gridArea = getGridArea();
+
+    // Marquee Box-Select Drag
+    if (isMarqueeDragging)
+    {
+        marqueeCurrent = e.position;
+        auto mr = juce::Rectangle<float>::leftTopRightBottom (
+            std::min (marqueeStart.x, marqueeCurrent.x),
+            std::min (marqueeStart.y, marqueeCurrent.y),
+            std::max (marqueeStart.x, marqueeCurrent.x),
+            std::max (marqueeStart.y, marqueeCurrent.y));
+
+        const juce::ScopedLock sl (processor.zoneLock);
+        selectedZoneIndices.clear();
+        for (int i = 0; i < static_cast<int> (processor.zones.size()); ++i)
+        {
+            auto zr = getZoneRect (processor.zones[static_cast<size_t> (i)], gridArea);
+            if (mr.intersects (zr))
+            {
+                selectedZoneIndices.insert (i);
+                processor.selectedZoneIndex = i;
+            }
+        }
+        if (onSelectionChanged) onSelectionChanged();
+        repaint();
+        return;
+    }
+
+    if (dragMode == DragMode::None || dragZoneIdx < 0) return;
+
     const juce::ScopedLock sl (processor.zoneLock);
     if (dragZoneIdx >= static_cast<int> (processor.zones.size())) return;
 
-    auto& z = processor.zones[static_cast<size_t> (dragZoneIdx)];
     int curNote = juce::jlimit (0, 120, noteAtX (e.x));
+    int deltaKey = curNote - dragStartNote;
     int rawVel = juce::jlimit (0, 127, static_cast<int> ((1.0f - (e.y - gridArea.getY()) / static_cast<float> (std::max (1, gridArea.getHeight()))) * 127.0f));
     int curVel = e.mods.isShiftDown() ? rawVel : snapVelocity (rawVel);
 
-    if (dragMode == DragMode::LeftEdge) z.lowKey = juce::jlimit (0, z.highKey, curNote);
-    else if (dragMode == DragMode::RightEdge) z.highKey = juce::jlimit (z.lowKey, 120, curNote);
-    else if (dragMode == DragMode::TopEdge) z.highVel = juce::jlimit (z.lowVel + 4, 127, curVel);
-    else if (dragMode == DragMode::BottomEdge) z.lowVel = juce::jlimit (0, z.highVel - 4, curVel);
-    else if (dragMode == DragMode::Move)
+    if (dragMode == DragMode::Move)
     {
-        int span = origHighKey - origLowKey;
-        int newLow = juce::jlimit (0, 120 - span, curNote - dragStartNoteOffset);
-        z.lowKey = newLow;
-        z.highKey = newLow + span;
+        // Clamp deltaKey so NO selected zone goes out of 0..120 bounds
+        int minDelta = -120;
+        int maxDelta = 120;
+        for (const auto& s : dragSnapshots)
+        {
+            minDelta = std::max (minDelta, -s.lowKey);
+            maxDelta = std::min (maxDelta, 120 - s.highKey);
+        }
+        int clampedDelta = juce::jlimit (minDelta, maxDelta, deltaKey);
+
+        for (const auto& s : dragSnapshots)
+        {
+            if (s.index >= 0 && s.index < static_cast<int> (processor.zones.size()))
+            {
+                auto& z = processor.zones[static_cast<size_t> (s.index)];
+                z.lowKey = s.lowKey + clampedDelta;
+                z.highKey = s.highKey + clampedDelta;
+            }
+        }
+    }
+    else if (dragMode == DragMode::LeftEdge)
+    {
+        for (const auto& s : dragSnapshots)
+        {
+            if (s.index >= 0 && s.index < static_cast<int> (processor.zones.size()))
+            {
+                auto& z = processor.zones[static_cast<size_t> (s.index)];
+                z.lowKey = juce::jlimit (0, z.highKey, s.lowKey + deltaKey);
+            }
+        }
+    }
+    else if (dragMode == DragMode::RightEdge)
+    {
+        for (const auto& s : dragSnapshots)
+        {
+            if (s.index >= 0 && s.index < static_cast<int> (processor.zones.size()))
+            {
+                auto& z = processor.zones[static_cast<size_t> (s.index)];
+                z.highKey = juce::jlimit (z.lowKey, 120, s.highKey + deltaKey);
+            }
+        }
+    }
+    else if (dragMode == DragMode::TopEdge)
+    {
+        auto& z = processor.zones[static_cast<size_t> (dragZoneIdx)];
+        z.highVel = juce::jlimit (z.lowVel + 2, 127, curVel);
+    }
+    else if (dragMode == DragMode::BottomEdge)
+    {
+        auto& z = processor.zones[static_cast<size_t> (dragZoneIdx)];
+        z.lowVel = juce::jlimit (0, z.highVel - 2, curVel);
     }
     repaint();
 }
@@ -381,6 +562,12 @@ void KeyMapperComponent::mouseUp (const juce::MouseEvent&)
 {
     dragMode = DragMode::None;
     dragZoneIdx = -1;
+    dragSnapshots.clear();
+    if (isMarqueeDragging)
+    {
+        isMarqueeDragging = false;
+        repaint();
+    }
     if (pressedKey >= 0)
     {
         processor.uiNoteOff (pressedKey);
@@ -403,8 +590,8 @@ void WaveEditorComponent::paint (juce::Graphics& g)
     if (processor.zones.empty() || processor.selectedZoneIndex < 0 || processor.selectedZoneIndex >= static_cast<int> (processor.zones.size()))
     {
         g.setColour (juce::Colour (0xff78849b));
-        g.setFont (11.5f);
-        g.drawText ("Double-click a key above to create Empty Track, then Drag & Drop WAV(s) here", area, juce::Justification::centred);
+        g.setFont (12.0f);
+        g.drawText ("Drag & Drop WAV/AIFF onto Key Map above, or drop here to add Round Robin layers", area, juce::Justification::centred);
         return;
     }
 
@@ -412,8 +599,8 @@ void WaveEditorComponent::paint (juce::Graphics& g)
     if (z.layers.empty())
     {
         g.setColour (z.colour.brighter (0.3f));
-        g.setFont (11.5f);
-        g.drawText ("Empty Track — Drop 1 or multiple Round Robin WAV files here!", area, juce::Justification::centred);
+        g.setFont (12.0f);
+        g.drawText ("Drop WAV/AIFF sample(s) here!", area, juce::Justification::centred);
         return;
     }
 
@@ -440,7 +627,7 @@ void WaveEditorComponent::paint (juce::Graphics& g)
 
     juce::Path p;
     float midY = area.getCentreY();
-    float halfH = area.getHeight() * 0.42f;
+    float halfH = area.getHeight() * 0.43f;
     p.startNewSubPath (static_cast<float> (area.getX()), midY);
 
     int step = std::max (1, numSamples / std::max (1, area.getWidth()));
@@ -451,35 +638,35 @@ void WaveEditorComponent::paint (juce::Graphics& g)
     }
 
     g.setColour (z.colour.brighter (0.25f));
-    g.strokePath (p, juce::PathStrokeType (1.2f));
+    g.strokePath (p, juce::PathStrokeType (1.25f));
 
     g.setColour (juce::Colour (0xffff5599));
     g.drawVerticalLine (static_cast<int> (startX), static_cast<float> (area.getY()), static_cast<float> (area.getBottom()));
     g.drawVerticalLine (static_cast<int> (endX), static_cast<float> (area.getY()), static_cast<float> (area.getBottom()));
-    g.fillRect (startX, static_cast<float> (area.getY()), 13.0f, 12.0f);
-    g.fillRect (endX - 13.0f, static_cast<float> (area.getY()), 13.0f, 12.0f);
+    g.fillRect (startX, static_cast<float> (area.getY()), 14.0f, 13.0f);
+    g.fillRect (endX - 14.0f, static_cast<float> (area.getY()), 14.0f, 13.0f);
     g.setColour (juce::Colours::white);
-    g.setFont (9.0f);
-    g.drawText ("S", static_cast<int> (startX), area.getY(), 13, 12, juce::Justification::centred);
-    g.drawText ("E", static_cast<int> (endX - 13.0f), area.getY(), 13, 12, juce::Justification::centred);
+    g.setFont (9.5f);
+    g.drawText ("S", static_cast<int> (startX), area.getY(), 14, 13, juce::Justification::centred);
+    g.drawText ("E", static_cast<int> (endX - 14.0f), area.getY(), 14, 13, juce::Justification::centred);
 
     if (z.sampleLoop)
     {
         g.setColour (juce::Colour (0xff4cc98f));
         g.drawVerticalLine (static_cast<int> (lStartX), static_cast<float> (area.getY()), static_cast<float> (area.getBottom()));
         g.drawVerticalLine (static_cast<int> (lEndX), static_cast<float> (area.getY()), static_cast<float> (area.getBottom()));
-        g.fillRect (lStartX, static_cast<float> (area.getBottom() - 12), 16.0f, 12.0f);
-        g.fillRect (lEndX - 16.0f, static_cast<float> (area.getBottom() - 12), 16.0f, 12.0f);
+        g.fillRect (lStartX, static_cast<float> (area.getBottom() - 13), 18.0f, 13.0f);
+        g.fillRect (lEndX - 18.0f, static_cast<float> (area.getBottom() - 13), 18.0f, 13.0f);
         g.setColour (juce::Colours::black);
-        g.drawText ("LS", static_cast<int> (lStartX), area.getBottom() - 12, 16, 12, juce::Justification::centred);
-        g.drawText ("LE", static_cast<int> (lEndX - 16.0f), area.getBottom() - 12, 16, 12, juce::Justification::centred);
+        g.drawText ("LS", static_cast<int> (lStartX), area.getBottom() - 13, 18, 13, juce::Justification::centred);
+        g.drawText ("LE", static_cast<int> (lEndX - 18.0f), area.getBottom() - 13, 18, 13, juce::Justification::centred);
     }
 
     g.setColour (juce::Colours::white.withAlpha (0.85f));
-    g.setFont (10.5f);
+    g.setFont (11.0f);
     g.drawText ("Track " + juce::String (lIdx + 1) + "/" + juce::String (z.layers.size()) + ": " + layer.name
                 + "  |  Root: " + juce::MidiMessage::getMidiNoteName (z.rootKey, true, true, 5),
-                area.reduced (16, 3), juce::Justification::topRight, true);
+                area.reduced (18, 4), juce::Justification::topRight, true);
 }
 
 void WaveEditorComponent::mouseDown (const juce::MouseEvent& e)
@@ -738,7 +925,6 @@ MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function
     hostSyncBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xff4cc98f));
     hostSyncAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "hostSync", hostSyncBtn);
 
-    // Typeable BPM Box (replaces BPM knob)
     addAndMakeVisible (bpmLabel);
     bpmLabel.setText ("BPM", juce::dontSendNotification);
     bpmLabel.setJustificationType (juce::Justification::centred);
@@ -774,7 +960,6 @@ MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function
     gridAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (audioProcessor.apvts, "grid", gridBox);
     gridBox.onChange = [this]() { seqComp.repaint(); };
 
-    // LOOP button placed in bottom bar right next to Grid!
     addAndMakeVisible (seqLoopBtn);
     seqLoopBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xffe84ea2));
     seqLoopAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "seqLoop", seqLoopBtn);
@@ -789,7 +974,7 @@ MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function
     editKmLabel.setColour (juce::Label::textColourId, juce::Colour (0xff9aa8bf));
     editContent.addAndMakeVisible (editKmLabel);
 
-    // Top Header Controls ABOVE Key Map Editor (No side buttons, No ROOT button!)
+    // Top Header Controls ABOVE Key Map Editor
     editContent.addAndMakeVisible (frrBtn);
     editContent.addAndMakeVisible (fvlBtn);
     editContent.addAndMakeVisible (pitchTrackBtn);
@@ -800,22 +985,30 @@ MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function
     fvlAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "fvl", fvlBtn);
     pitchTrackAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "pitchTrack", pitchTrackBtn);
 
-    // Velocity Grid Selector
+    // Select ALL Zones button (also works with Ctrl+A or mouse drag marquee box!)
+    editContent.addAndMakeVisible (selectAllZonesBtn);
+    selectAllZonesBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2b384e));
+    selectAllZonesBtn.setTooltip ("Select all mapped zones to move them together (or drag a box in the grid)");
+    selectAllZonesBtn.onClick = [this]() { editKeyMapper.selectAllZones(); };
+
+    // Velocity Grid Selector (includes 16, 32, 64!)
     editContent.addAndMakeVisible (velGridBox);
     velGridBox.addItem ("Vel Grid: Free", 1);
     velGridBox.addItem ("Vel Grid: 2", 2);
     velGridBox.addItem ("Vel Grid: 4", 3);
     velGridBox.addItem ("Vel Grid: 8", 4);
     velGridBox.addItem ("Vel Grid: 16", 5);
-    velGridBox.setSelectedId (3, juce::dontSendNotification); // Default 4 layers
+    velGridBox.addItem ("Vel Grid: 32", 6);
+    velGridBox.addItem ("Vel Grid: 64", 7);
+    velGridBox.setSelectedId (3, juce::dontSendNotification);
     velGridBox.onChange = [this]()
     {
         int id = velGridBox.getSelectedId();
-        int divs = (id == 1) ? 0 : (id == 2 ? 2 : (id == 3 ? 4 : (id == 4 ? 8 : 16)));
+        int divs = (id == 1) ? 0 : (id == 2 ? 2 : (id == 3 ? 4 : (id == 4 ? 8 : (id == 5 ? 16 : (id == 6 ? 32 : 64)))));
         editKeyMapper.setVelocityGridDivisions (divs);
     };
 
-    // Zone Color Selector (Default Blue + 11 more colors)
+    // Zone Color Selector (applies to ALL selected zones!)
     editContent.addAndMakeVisible (zoneColourBox);
     for (int c = 0; c < NoiseMu6ixRhythmAudioProcessor::numPaletteColours; ++c)
         zoneColourBox.addItem (NoiseMu6ixRhythmAudioProcessor::getPaletteColourName (c), c + 1);
@@ -826,7 +1019,20 @@ MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function
         if (cIdx >= 0)
         {
             const juce::ScopedLock sl (audioProcessor.zoneLock);
-            if (audioProcessor.selectedZoneIndex >= 0 && audioProcessor.selectedZoneIndex < static_cast<int> (audioProcessor.zones.size()))
+            const auto& sel = editKeyMapper.getSelectedZoneIndices();
+            if (! sel.empty())
+            {
+                for (int idx : sel)
+                {
+                    if (idx >= 0 && idx < static_cast<int> (audioProcessor.zones.size()))
+                    {
+                        auto& z = audioProcessor.zones[static_cast<size_t> (idx)];
+                        z.colourIndex = cIdx;
+                        z.colour = NoiseMu6ixRhythmAudioProcessor::getPaletteColour (cIdx);
+                    }
+                }
+            }
+            else if (audioProcessor.selectedZoneIndex >= 0 && audioProcessor.selectedZoneIndex < static_cast<int> (audioProcessor.zones.size()))
             {
                 auto& z = audioProcessor.zones[static_cast<size_t> (audioProcessor.selectedZoneIndex)];
                 z.colourIndex = cIdx;
@@ -838,12 +1044,6 @@ MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function
 
     editKeyMapper.setReadOnly (false);
     editKeyMapper.setVelocityGridDivisions (4);
-    editKeyMapper.onDoubleClickKey = [this] (int key)
-    {
-        audioProcessor.createEmptyZone (key);
-        syncPerZoneControls();
-        repaintDynamicAreas();
-    };
     editKeyMapper.onSelectionChanged = [this]() { syncPerZoneControls(); };
     editContent.addAndMakeVisible (editKeyMapper);
 
@@ -922,6 +1122,12 @@ MainPluginView::MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function
 
     setActiveTab (ActiveTab::Main);
     syncPerZoneControls();
+}
+
+void MainPluginView::selectAllInEditTab()
+{
+    if (activeTab == ActiveTab::Edit)
+        editKeyMapper.selectAllZones();
 }
 
 void MainPluginView::applyBpmText()
@@ -1079,20 +1285,9 @@ void MainPluginView::listBoxItemDoubleClicked (int row, const juce::MouseEvent&)
     }
     else
     {
-        bool addedToSelected = false;
-        {
-            const juce::ScopedLock sl (audioProcessor.zoneLock);
-            if (audioProcessor.selectedZoneIndex >= 0 && audioProcessor.selectedZoneIndex < static_cast<int> (audioProcessor.zones.size()))
-                if (audioProcessor.zones[static_cast<size_t> (audioProcessor.selectedZoneIndex)].layers.empty())
-                    addedToSelected = true;
-        }
-        if (addedToSelected)
-            audioProcessor.addSampleToZone (audioProcessor.selectedZoneIndex, f);
-        else
-        {
-            int nextKey = juce::jlimit (0, 120, 60 + static_cast<int> (audioProcessor.zones.size()));
-            audioProcessor.loadSampleIntoNewZone (f, nextKey, nextKey, nextKey);
-        }
+        int nextKey = juce::jlimit (0, 120, 60 + static_cast<int> (audioProcessor.zones.size()));
+        audioProcessor.loadSampleIntoNewZone (f, nextKey, nextKey, nextKey);
+        editKeyMapper.selectSingleZone (audioProcessor.selectedZoneIndex);
     }
     syncPerZoneControls();
     repaintDynamicAreas();
@@ -1107,15 +1302,12 @@ void MainPluginView::handleFilesDropped (const juce::StringArray& files, int loc
     if (activeTab == ActiveTab::Main && ! hasPreset)
         return;
 
-    // Translate drop coordinates into editContent space when on EDIT tab
     auto editPos = editContent.getLocalPoint (this, juce::Point<int> (localX, localY));
 
+    // Drop on Wave Editor -> adds Round Robin sample(s) to selected zone (creates zone on C5/60 only if none exists)
     if (activeTab == ActiveTab::Edit && waveEditor.getBounds().contains (editPos))
     {
         int targetZone = audioProcessor.selectedZoneIndex;
-        if (targetZone < 0 || targetZone >= static_cast<int> (audioProcessor.zones.size()))
-            targetZone = audioProcessor.createEmptyZone (60);
-
         for (const auto& path : files)
         {
             juce::File f (path);
@@ -1124,13 +1316,26 @@ void MainPluginView::handleFilesDropped (const juce::StringArray& files, int loc
                 audioProcessor.loadPresetMn6x (f);
                 presetNameBox.setText (audioProcessor.currentPresetName, juce::dontSendNotification);
             }
-            else audioProcessor.addSampleToZone (targetZone, f);
+            else
+            {
+                if (targetZone < 0 || targetZone >= static_cast<int> (audioProcessor.zones.size()))
+                {
+                    audioProcessor.loadSampleIntoNewZone (f, 60, 60, 60);
+                    targetZone = audioProcessor.selectedZoneIndex;
+                }
+                else
+                {
+                    audioProcessor.addSampleToZone (targetZone, f);
+                }
+            }
         }
+        editKeyMapper.selectSingleZone (audioProcessor.selectedZoneIndex);
         syncPerZoneControls();
         repaintDynamicAreas();
         return;
     }
 
+    // Drop on Key Map Editor -> creates new zone(s) ONLY when sample is dropped!
     int targetKey = 60 + static_cast<int> (audioProcessor.zones.size());
     if (activeTab == ActiveTab::Edit && editKeyMapper.getBounds().contains (editPos))
         targetKey = juce::jlimit (0, 120, editKeyMapper.noteAtX (editPos.x - editKeyMapper.getX()));
@@ -1150,6 +1355,7 @@ void MainPluginView::handleFilesDropped (const juce::StringArray& files, int loc
             targetKey = juce::jlimit (0, 120, targetKey + 1);
         }
     }
+    editKeyMapper.selectSingleZone (audioProcessor.selectedZoneIndex);
     syncPerZoneControls();
     repaintDynamicAreas();
 }
@@ -1169,39 +1375,40 @@ void MainPluginView::repaintDynamicAreas()
 void MainPluginView::layoutEditContent (int viewportWidth)
 {
     int contentW = std::max (600, viewportWidth - 14);
-    int totalH = 560; // Tall scrollable area so Key Map Editor & Wave Editor are big & comfortable!
+    int totalH = 720; // Extra spacious scrollable EDIT view!
     editContent.setSize (contentW, totalH);
 
     auto r = juce::Rectangle<int> (0, 0, contentW, totalH).reduced (4);
 
-    // Top Header Bar ABOVE Key Map Editor (Full width!)
+    // Top Header Bar ABOVE Key Map Editor
     auto kmTopBar = r.removeFromTop (26);
-    editKmLabel.setBounds (kmTopBar.removeFromLeft (115));
-    frrBtn.setBounds (kmTopBar.removeFromLeft (54).reduced (1));
-    fvlBtn.setBounds (kmTopBar.removeFromLeft (54).reduced (1));
-    pitchTrackBtn.setBounds (kmTopBar.removeFromLeft (68).reduced (1));
-    zoneColourBox.setBounds (kmTopBar.removeFromRight (126).reduced (2, 1));
-    velGridBox.setBounds (kmTopBar.removeFromRight (114).reduced (2, 1));
+    editKmLabel.setBounds (kmTopBar.removeFromLeft (106));
+    frrBtn.setBounds (kmTopBar.removeFromLeft (48).reduced (1));
+    fvlBtn.setBounds (kmTopBar.removeFromLeft (48).reduced (1));
+    pitchTrackBtn.setBounds (kmTopBar.removeFromLeft (60).reduced (1));
+    selectAllZonesBtn.setBounds (kmTopBar.removeFromLeft (44).reduced (2, 1));
+    zoneColourBox.setBounds (kmTopBar.removeFromRight (118).reduced (2, 1));
+    velGridBox.setBounds (kmTopBar.removeFromRight (112).reduced (2, 1));
 
-    // BIG Full-Width Key Map Editor (245px tall!)
+    // EXTRA BIG Full-Width Key Map Editor (345px tall!)
     r.removeFromTop (4);
-    editKeyMapper.setBounds (r.removeFromTop (245));
+    editKeyMapper.setBounds (r.removeFromTop (345));
 
     // Sample Wave Editor Header
-    r.removeFromTop (12);
+    r.removeFromTop (14);
     auto waveHeader = r.removeFromTop (24);
     editWaveLabel.setBounds (waveHeader.removeFromLeft (150));
     sampleLoopBtn.setBounds (waveHeader.removeFromRight (66));
     realRRBtn.setBounds (waveHeader.removeFromRight (52));
     trackSelectBox.setBounds (waveHeader.removeFromRight (210).reduced (4, 1));
 
-    // Wave Editor Display
+    // EXTRA BIG Sample Wave Editor Display (200px tall!)
     r.removeFromTop (4);
-    waveEditor.setBounds (r.removeFromTop (138));
+    waveEditor.setBounds (r.removeFromTop (200));
 
     // Wave Editor 13 Per-Zone Knobs
-    r.removeFromTop (6);
-    auto knobRow = r.removeFromTop (72);
+    r.removeFromTop (8);
+    auto knobRow = r.removeFromTop (76);
     LabeledKnob* waveKnobs[] = { &startKnob, &endKnob, &loopStartKnob, &loopEndKnob, &pitchKnob, &panKnob, &volKnob,
                                  &attackKnob, &decayKnob, &sustainKnob, &releaseKnob, &cutoffKnob, &resKnob };
     int kw = knobRow.getWidth() / 13;
@@ -1212,10 +1419,10 @@ void MainPluginView::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colour (0xff1c222d));
 
-    // Version v1.0.6 in bottom-right corner
+    // Version v1.0.7 in bottom-right corner
     g.setColour (juce::Colour (0xff6e7b91));
     g.setFont (10.0f);
-    g.drawText ("v1.0.6", getWidth() - 56, getHeight() - 15, 48, 13, juce::Justification::centredRight);
+    g.drawText ("v1.0.7", getWidth() - 56, getHeight() - 15, 48, 13, juce::Justification::centredRight);
 
     g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
     g.setColour (juce::Colour (0xff9aa8bf));
@@ -1263,19 +1470,17 @@ void MainPluginView::resized()
 
     if (activeTab == ActiveTab::Main)
     {
-        // MAIN TAB: Full-Width Read-Only Key Map + Full-Width Rhythm Sequencer + Bottom Bar (with Typeable BPM & LOOP next to Grid)
         area.removeFromTop (18);
         mainKeyMapper.setBounds (area.removeFromTop (164));
 
         area.removeFromTop (22);
-        seqComp.setBounds (area.removeFromTop (196)); // Full width!
+        seqComp.setBounds (area.removeFromTop (196));
 
         area.removeFromTop (6);
         auto bottomCtrl = area.removeFromTop (60);
         playPauseBtn.setBounds (bottomCtrl.removeFromLeft (66).reduced (2, 11));
         hostSyncBtn.setBounds (bottomCtrl.removeFromLeft (62).reduced (2, 12));
 
-        // Typeable BPM box
         auto bpmArea = bottomCtrl.removeFromLeft (68).reduced (3, 4);
         bpmLabel.setBounds (bpmArea.removeFromTop (13));
         bpmInputBox.setBounds (bpmArea.removeFromTop (26).reduced (0, 1));
@@ -1284,7 +1489,6 @@ void MainPluginView::resized()
         timeRandKnob.setBounds (bottomCtrl.removeFromLeft (64).reduced (1));
         velRandKnob.setBounds (bottomCtrl.removeFromLeft (64).reduced (1));
 
-        // Larger Grid dropdown + LOOP toggle right beside it
         auto gridArea = bottomCtrl.removeFromLeft (126).reduced (4, 4);
         gridLabel.setBounds (gridArea.removeFromTop (13));
         gridBox.setBounds (gridArea.removeFromTop (26).reduced (0, 1));
@@ -1293,7 +1497,6 @@ void MainPluginView::resized()
     }
     else
     {
-        // EDIT TAB: Scrollable Viewport with Large Full-Width Key Map Editor + Wave Editor
         area.removeFromTop (4);
         editViewport.setBounds (area);
         layoutEditContent (area.getWidth());
@@ -1319,6 +1522,11 @@ bool NoiseMu6ixRhythmAudioProcessorEditor::keyPressed (const juce::KeyPress& key
     if (key == juce::KeyPress::spaceKey)
     {
         mainView.togglePlayPause();
+        return true;
+    }
+    if (key == juce::KeyPress ('a', juce::ModifierKeys::commandModifier, 0))
+    {
+        mainView.selectAllInEditTab();
         return true;
     }
     return false;

@@ -55,7 +55,7 @@ struct SampleLayer
 
 struct SampleZone
 {
-    juce::String name { "Empty Track" };
+    juce::String name { "Sample" };
     int lowKey = 60;
     int highKey = 60;
     int rootKey = 60;
@@ -130,7 +130,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "Noise Mu6ix Rhythm v1.0.6"; }
+    const juce::String getName() const override { return "Noise Mu6ix Rhythm v1.0.7"; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -149,6 +149,7 @@ public:
     bool addSampleToZone (int zoneIndex, const juce::File& file);
     bool loadSampleIntoNewZone (const juce::File& file, int lowKey, int highKey, int rootKey, int lowVel = 0, int highVel = 127);
     void deleteZone (int index);
+    void deleteZones (std::vector<int> indices);
 
     void triggerNote (int midiNote, float velocity);
     void releaseNote (int midiNote);

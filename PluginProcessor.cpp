@@ -61,7 +61,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout NoiseMu6ixRhythmAudioProcess
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("timeRand", "Time Randomize", 0.0f, 1.0f, 0.0f));
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("velRand", "Velocity Randomize", 0.0f, 1.0f, 0.0f));
 
-    // Expanded Grid including Triplets 1/12, 1/24, 1/36 and fine 1/32, 1/64
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         "grid", "Grid",
         juce::StringArray { "1/4", "1/8", "1/12 (T)", "1/16", "1/24 (T)", "1/32", "1/48 (T)", "1/64" }, 1));
@@ -117,7 +116,7 @@ int NoiseMu6ixRhythmAudioProcessor::createEmptyZone (int key)
     z.highVel = 127;
     z.realRREnabled = true;
     z.seqEvents = createDefaultEvents();
-    z.colourIndex = 0; // Always Blue by default!
+    z.colourIndex = 0; // Always Blue by default
     z.colour = getPaletteColour (0);
     zones.push_back (std::move (z));
     selectedZoneIndex = static_cast<int> (zones.size()) - 1;
@@ -180,6 +179,14 @@ void NoiseMu6ixRhythmAudioProcessor::deleteZone (int index)
         else
             selectedZoneIndex = juce::jlimit (0, static_cast<int> (zones.size()) - 1, selectedZoneIndex);
     }
+}
+
+void NoiseMu6ixRhythmAudioProcessor::deleteZones (std::vector<int> indices)
+{
+    std::sort (indices.begin(), indices.end(), std::greater<int>());
+    indices.erase (std::unique (indices.begin(), indices.end()), indices.end());
+    for (int idx : indices)
+        deleteZone (idx);
 }
 
 void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, float velocity)
