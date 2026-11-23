@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include <cmath>
 #include <algorithm>
+#include <cctype>
 
 juce::Colour NoiseMu6ixRhythmAudioProcessor::getPaletteColour (int idx)
 {
@@ -31,13 +32,56 @@ juce::String NoiseMu6ixRhythmAudioProcessor::getPaletteColourName (int idx)
     return names[juce::jlimit (0, numPaletteColours - 1, idx)];
 }
 
+int NoiseMu6ixRhythmAudioProcessor::parseMidiNoteFromFilename (const juce::String& name)
+{
+    // Looks for tokens like C3, D#4, Fs2, Bb3, A0, etc. (where C5 = 60 in FL Studio / C0 = 0)
+    auto upper = name.toUpperCase();
+    int len = upper.length();
+    for (int i = len - 1; i >= 0; --i)
+    {
+        juce::juce_wchar c = upper[i];
+        int baseSemi = -1;
+        if      (c == 'C') baseSemi = 0;
+        else if (c == 'D') baseSemi = 2;
+        else if (c == 'E') baseSemi = 4;
+        else if (c == 'F') baseSemi = 5;
+        else if (c == 'G') baseSemi = 7;
+        else if (c == 'A') baseSemi = 9;
+        else if (c == 'B') baseSemi = 11;
+        else continue;
+
+        // Require boundary before note letter (start of string or separator)
+        if (i > 0 && std::isalnum (static_cast<unsigned char> (upper[i - 1])))
+            continue;
+
+        int pos = i + 1;
+        int acc = 0;
+        if (pos < len)
+        {
+            if (upper[pos] == '#' || upper[pos] == 'S') { acc = 1; ++pos; }
+            else if (upper[pos] == 'B') { acc = -1; ++pos; }
+        }
+        if (pos < len && std::isdigit (static_cast<unsigned char> (upper[pos])))
+        {
+            int oct = static_cast<int> (upper[pos] - '0');
+            if (pos + 1 < len && std::isdigit (static_cast<unsigned char> (upper[pos + 1])))
+                oct = oct * 10 + static_cast<int> (upper[pos + 1] - '0');
+            int note = oct * 12 + baseSemi + acc;
+            if (note >= 0 && note <= 120)
+                return note;
+        }
+    }
+    return -1;
+}
+
 NoiseMu6ixRhythmAudioProcessor::NoiseMu6ixRhythmAudioProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMETERS", createParameterLayout())
 {
     formatManager.registerBasicFormats();
     heldNotesVel.fill (0.0f);
-    groups.push_back ({ "Group 1", false });
+    groupRRCounters.fill (0);
+    groups.push_back ({ "Group 1", false, 0, -1 });
     selectedGroupIndex = 0;
 }
 
@@ -109,7 +153,7 @@ int NoiseMu6ixRhythmAudioProcessor::createEmptyGroup()
 {
     const juce::ScopedLock sl (zoneLock);
     int nextNum = static_cast<int> (groups.size()) + 1;
-    groups.push_back ({ "Group " + juce::String (nextNum), false });
+    groups.push_back ({ "Group " + juce::String (nextNum), false, 0, -1 });
     selectedGroupIndex = static_cast<int> (groups.size()) - 1;
     return selectedGroupIndex;
 }
@@ -120,7 +164,6 @@ void NoiseMu6ixRhythmAudioProcessor::deleteGroup (int groupIdx)
     if (groups.size() <= 1 || groupIdx < 0 || groupIdx >= static_cast<int> (groups.size()))
         return;
 
-    // Remove zones belonging to this group and shift higher group indices down
     for (int i = static_cast<int> (zones.size()) - 1; i >= 0; --i)
     {
         if (zones[static_cast<size_t> (i)].groupIndex == groupIdx)
@@ -133,12 +176,20 @@ void NoiseMu6ixRhythmAudioProcessor::deleteGroup (int groupIdx)
     selectedGroupIndex = juce::jlimit (0, static_cast<int> (groups.size()) - 1, selectedGroupIndex);
 }
 
+bool NoiseMu6ixRhythmAudioProcessor::isKeyswitchNote (int midiNote) const
+{
+    for (const auto& g : groups)
+        if (g.keyswitchNote >= 0 && g.keyswitchNote == midiNote)
+            return true;
+    return false;
+}
+
 int NoiseMu6ixRhythmAudioProcessor::createEmptyZone (int key)
 {
     const juce::ScopedLock sl (zoneLock);
     if (groups.empty())
     {
-        groups.push_back ({ "Group 1", false });
+        groups.push_back ({ "Group 1", false, 0, -1 });
         selectedGroupIndex = 0;
     }
     int k = juce::jlimit (0, 120, key);
@@ -152,7 +203,7 @@ int NoiseMu6ixRhythmAudioProcessor::createEmptyZone (int key)
     z.highVel = 127;
     z.realRREnabled = true;
     z.seqEvents = createDefaultEvents();
-    z.colourIndex = 0; // Always Blue by default
+    z.colourIndex = 0;
     z.colour = getPaletteColour (0);
     zones.push_back (std::move (z));
     selectedZoneIndex = static_cast<int> (zones.size()) - 1;
@@ -225,15 +276,66 @@ void NoiseMu6ixRhythmAudioProcessor::deleteZones (std::vector<int> indices)
         deleteZone (idx);
 }
 
+int NoiseMu6ixRhythmAudioProcessor::duplicateZone (int index)
+{
+    const juce::ScopedLock sl (zoneLock);
+    if (index < 0 || index >= static_cast<int> (zones.size()))
+        return -1;
+    SampleZone copy = zones[static_cast<size_t> (index)];
+    copy.name = copy.name + " Copy";
+    zones.push_back (std::move (copy));
+    selectedZoneIndex = static_cast<int> (zones.size()) - 1;
+    return selectedZoneIndex;
+}
+
+void NoiseMu6ixRhythmAudioProcessor::normalizeSelectedSample()
+{
+    const juce::ScopedLock sl (zoneLock);
+    if (selectedZoneIndex < 0 || selectedZoneIndex >= static_cast<int> (zones.size())) return;
+    auto& z = zones[static_cast<size_t> (selectedZoneIndex)];
+    if (z.layers.empty()) return;
+    int lIdx = juce::jlimit (0, static_cast<int> (z.layers.size()) - 1, z.selectedLayerIndex);
+    auto& buf = z.layers[static_cast<size_t> (lIdx)].buffer;
+    float peak = buf.getMagnitude (0, buf.getNumSamples());
+    if (peak > 1e-5f)
+        buf.applyGain (0.98f / peak);
+}
+
+bool NoiseMu6ixRhythmAudioProcessor::isGroupActiveForNote (int groupIdx) const
+{
+    if (groupIdx < 0 || groupIdx >= static_cast<int> (groups.size()))
+        return false;
+    const auto& g = groups[static_cast<size_t> (groupIdx)];
+    if (g.muted)
+        return false;
+    if (groupSoloEnabled.load() && groupIdx != selectedGroupIndex)
+        return false;
+
+    // Keyswitch filter: if group has a keyswitch assigned, it only plays when that keyswitch is active
+    if (g.keyswitchNote >= 0)
+    {
+        int activeKs = activeKeyswitchNote.load();
+        if (activeKs >= 0 && g.keyswitchNote != activeKs)
+            return false;
+        // If no keyswitch has been pressed yet, allow the first keyswitch group to sound as default
+        if (activeKs < 0)
+        {
+            for (int i = 0; i < static_cast<int> (groups.size()); ++i)
+            {
+                if (groups[static_cast<size_t> (i)].keyswitchNote >= 0)
+                    return groups[static_cast<size_t> (i)].keyswitchNote == g.keyswitchNote;
+            }
+        }
+    }
+    return true;
+}
+
 bool NoiseMu6ixRhythmAudioProcessor::isZoneAudible (int zoneIdx) const
 {
     if (zoneIdx < 0 || zoneIdx >= static_cast<int> (zones.size()))
         return false;
     const auto& z = zones[static_cast<size_t> (zoneIdx)];
-    if (z.groupIndex >= 0 && z.groupIndex < static_cast<int> (groups.size()))
-        if (groups[static_cast<size_t> (z.groupIndex)].muted)
-            return false;
-    if (groupSoloEnabled.load() && z.groupIndex != selectedGroupIndex)
+    if (! isGroupActiveForNote (z.groupIndex))
         return false;
     if (zoneSoloEnabled.load() && zoneIdx != selectedZoneIndex)
         return false;
@@ -257,7 +359,8 @@ void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, floa
     }
 
     const auto& layer = z.layers[static_cast<size_t> (layerIdx)];
-    if (layer.buffer.getNumSamples() == 0)
+    int totalSamps = layer.buffer.getNumSamples();
+    if (totalSamps < 2)
         return;
 
     int vIdx = 0;
@@ -278,6 +381,10 @@ void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, floa
     v.velocity = juce::jlimit (0.04f, 1.0f, velocity);
     v.envVal = 0.0f;
     v.envStage = 0;
+    v.playingReverse = z.reverse;
+    v.inLoopRegion = false;
+    v.noteReleased = false;
+    v.loopsCompleted = 0;
 
     bool frrOn = (apvts.getRawParameterValue ("frr")->load() > 0.5f) && (z.layers.size() == 1);
     bool fvlOn = apvts.getRawParameterValue ("fvl")->load() > 0.5f;
@@ -343,7 +450,14 @@ void NoiseMu6ixRhythmAudioProcessor::startVoice (int zoneIdx, int midiNote, floa
     double noteSemiOffset = pitchTrackOn ? static_cast<double> (midiNote - z.rootKey) : 0.0;
     double semitones = noteSemiOffset + static_cast<double> (z.pitchSemi) + (rrPitchCents / 100.0);
     v.pitchRatio = (layer.sampleRate / currentSampleRate) * std::pow (2.0, semitones / 12.0);
-    v.currentPos = static_cast<double> (z.startNorm * layer.buffer.getNumSamples()) + rrStartOffsetSamples;
+    v.loopPitchRatio = (layer.sampleRate / currentSampleRate) * std::pow (2.0, (semitones + z.loopTuneCents / 100.0) / 12.0);
+
+    int startSamp = static_cast<int> (z.startNorm * totalSamps);
+    int endSamp = std::max (startSamp + 2, static_cast<int> (z.endNorm * totalSamps));
+    if (z.reverse)
+        v.currentPos = static_cast<double> (std::max (startSamp, endSamp - 2));
+    else
+        v.currentPos = static_cast<double> (startSamp) + rrStartOffsetSamples;
 
     float finalPan = juce::jlimit (-1.0f, 1.0f, z.pan);
     float panAngle = (finalPan + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
@@ -362,12 +476,54 @@ void NoiseMu6ixRhythmAudioProcessor::triggerNote (int midiNote, float velocity)
 {
     lastPlayedNote.store (midiNote);
     const juce::ScopedLock sl (zoneLock);
+
+    // Check if this MIDI note is a Keyswitch!
+    if (isKeyswitchNote (midiNote))
+    {
+        activeKeyswitchNote.store (midiNote);
+        for (int i = 0; i < static_cast<int> (groups.size()); ++i)
+        {
+            if (groups[static_cast<size_t> (i)].keyswitchNote == midiNote)
+            {
+                selectedGroupIndex = i;
+                break;
+            }
+        }
+        return; // Keyswitch switches articulation without triggering audio
+    }
+
     int velInt = juce::jlimit (0, 127, static_cast<int> (velocity * 127.0f));
+
+    // Group-Level Round Robin selection per RR Set (1..8)
+    std::array<int, 9> chosenGroupForRRSet;
+    chosenGroupForRRSet.fill (-1);
+    for (int rrSet = 1; rrSet <= 8; ++rrSet)
+    {
+        std::vector<int> candidates;
+        for (int gIdx = 0; gIdx < static_cast<int> (groups.size()); ++gIdx)
+        {
+            if (groups[static_cast<size_t> (gIdx)].rrSetId == rrSet && isGroupActiveForNote (gIdx))
+                candidates.push_back (gIdx);
+        }
+        if (! candidates.empty())
+        {
+            int pick = groupRRCounters[static_cast<size_t> (rrSet)] % static_cast<int> (candidates.size());
+            groupRRCounters[static_cast<size_t> (rrSet)] = (pick + 1) % static_cast<int> (candidates.size());
+            chosenGroupForRRSet[static_cast<size_t> (rrSet)] = candidates[static_cast<size_t> (pick)];
+        }
+    }
+
     for (int i = 0; i < static_cast<int> (zones.size()); ++i)
     {
         const auto& z = zones[static_cast<size_t> (i)];
         if (midiNote >= z.lowKey && midiNote <= z.highKey && velInt >= z.lowVel && velInt <= z.highVel)
         {
+            if (z.groupIndex >= 0 && z.groupIndex < static_cast<int> (groups.size()))
+            {
+                int rrSet = groups[static_cast<size_t> (z.groupIndex)].rrSetId;
+                if (rrSet >= 1 && rrSet <= 8 && chosenGroupForRRSet[static_cast<size_t> (rrSet)] != z.groupIndex)
+                    continue; // Skip non-active RR group for this hit
+            }
             startVoice (i, midiNote, velocity);
             if (selectByMidi.load())
             {
@@ -383,8 +539,18 @@ void NoiseMu6ixRhythmAudioProcessor::releaseNote (int midiNote)
     if (lastPlayedNote.load() == midiNote)
         lastPlayedNote.store (-1);
     for (auto& v : voices)
+    {
         if (v.active && v.midiNote == midiNote)
-            v.envStage = 3;
+        {
+            v.noteReleased = true;
+            // In UntilRelease loop mode, let the sample finish naturally after exiting loop; otherwise enter release envelope
+            bool isUntilRel = false;
+            if (v.zoneIndex >= 0 && v.zoneIndex < static_cast<int> (zones.size()))
+                isUntilRel = (zones[static_cast<size_t> (v.zoneIndex)].sampleLoop && zones[static_cast<size_t> (v.zoneIndex)].loopMode == 2);
+            if (! isUntilRel)
+                v.envStage = 3;
+        }
+    }
 }
 
 bool NoiseMu6ixRhythmAudioProcessor::hasAnyHeldNote() const
@@ -396,6 +562,21 @@ bool NoiseMu6ixRhythmAudioProcessor::hasAnyHeldNote() const
 
 void NoiseMu6ixRhythmAudioProcessor::uiNoteOn (int midiNote, float velocity)
 {
+    {
+        const juce::ScopedLock sl (zoneLock);
+        if (isKeyswitchNote (midiNote))
+        {
+            activeKeyswitchNote.store (midiNote);
+            for (int i = 0; i < static_cast<int> (groups.size()); ++i)
+                if (groups[static_cast<size_t> (i)].keyswitchNote == midiNote)
+                {
+                    selectedGroupIndex = i;
+                    break;
+                }
+            return;
+        }
+    }
+
     bool seqLoopOn = apvts.getRawParameterValue ("seqLoop")->load() > 0.5f;
     bool wasIdle = ! hasAnyHeldNote() && ! internalPlaying.load();
 
@@ -543,12 +724,8 @@ void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
                     evPos += (rng.nextFloat() * 2.0f - 1.0f) * 0.010 * timeRandAmt;
                 evPos = std::fmod (evPos + 1.0, 1.0);
 
-                bool triggered = false;
-                if (! wrapped)
-                    triggered = (evPos > prevPhase && evPos <= seqBarPhase);
-                else
-                    triggered = (evPos > prevPhase || evPos <= seqBarPhase);
-
+                bool triggered = (! wrapped && evPos > prevPhase && evPos <= seqBarPhase)
+                              || (wrapped && (evPos > prevPhase || evPos <= seqBarPhase));
                 if (triggered)
                     startVoice (zIdx, triggerMidi, triggerVel * ev.velocity);
             }
@@ -576,6 +753,11 @@ void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
         int endSample = std::max (startSample + 2, static_cast<int> (z.endNorm * totalSamps));
         int lStartSample = juce::jlimit (startSample, endSample - 2, static_cast<int> (z.loopStartNorm * totalSamps));
         int lEndSample = juce::jlimit (lStartSample + 2, endSample, static_cast<int> (z.loopEndNorm * totalSamps));
+        int loopLen = std::max (2, lEndSample - lStartSample);
+        int xfadeSamps = static_cast<int> (z.loopCrossfade * loopLen);
+        int activeLen = std::max (2, endSample - startSample);
+        int fadeInSamps = static_cast<int> (z.fadeInNorm * activeLen);
+        int fadeOutSamps = static_cast<int> (z.fadeOutNorm * activeLen);
 
         const float* srcL = layer.buffer.getReadPointer (0);
         const float* srcR = layer.buffer.getNumChannels() > 1 ? layer.buffer.getReadPointer (1) : srcL;
@@ -583,12 +765,36 @@ void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
         for (int i = 0; i < numSamples; ++i)
         {
             int posInt = static_cast<int> (v.currentPos);
-            if (z.sampleLoop && posInt >= lEndSample - 1)
+            bool loopAllowed = z.sampleLoop && (z.loopCount == 0 || v.loopsCompleted < z.loopCount)
+                               && ! (z.loopMode == 2 && v.noteReleased);
+
+            if (loopAllowed && ! z.reverse)
             {
-                v.currentPos = static_cast<double> (lStartSample);
-                posInt = lStartSample;
+                if (! v.playingReverse && posInt >= lEndSample - 1)
+                {
+                    v.inLoopRegion = true;
+                    v.loopsCompleted++;
+                    if (z.loopMode == 1) // Ping-Pong
+                    {
+                        v.playingReverse = true;
+                        v.currentPos = static_cast<double> (lEndSample - 2);
+                        posInt = lEndSample - 2;
+                    }
+                    else
+                    {
+                        v.currentPos = static_cast<double> (lStartSample);
+                        posInt = lStartSample;
+                    }
+                }
+                else if (v.playingReverse && posInt <= lStartSample)
+                {
+                    v.playingReverse = false;
+                    v.currentPos = static_cast<double> (lStartSample);
+                    posInt = lStartSample;
+                }
             }
-            else if (posInt >= endSample - 1 || posInt >= totalSamps - 1)
+
+            if (posInt < startSample || posInt >= endSample - 1 || posInt >= totalSamps - 1)
             {
                 v.active = false;
                 break;
@@ -597,6 +803,22 @@ void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
             float frac = static_cast<float> (v.currentPos - posInt);
             float sL = srcL[posInt] + frac * (srcL[posInt + 1] - srcL[posInt]);
             float sR = srcR[posInt] + frac * (srcR[posInt + 1] - srcR[posInt]);
+
+            // Smooth Loop Crossfade near loop end (eliminates clicks on strings/sustains!)
+            if (loopAllowed && z.loopMode != 1 && xfadeSamps > 8 && posInt >= lEndSample - xfadeSamps)
+            {
+                float alpha = static_cast<float> (posInt - (lEndSample - xfadeSamps)) / static_cast<float> (xfadeSamps);
+                int altPos = juce::jlimit (startSample, totalSamps - 2, lStartSample + (posInt - (lEndSample - xfadeSamps)));
+                sL = sL * (1.0f - alpha) + srcL[altPos] * alpha;
+                sR = sR * (1.0f - alpha) + srcR[altPos] * alpha;
+            }
+
+            // Sample Fade In / Fade Out
+            float fadeGain = 1.0f;
+            if (fadeInSamps > 4 && (posInt - startSample) < fadeInSamps)
+                fadeGain *= static_cast<float> (posInt - startSample) / static_cast<float> (fadeInSamps);
+            if (fadeOutSamps > 4 && (endSample - posInt) < fadeOutSamps)
+                fadeGain *= static_cast<float> (endSample - posInt) / static_cast<float> (fadeOutSamps);
 
             if (v.envStage == 0)
             {
@@ -623,10 +845,12 @@ void NoiseMu6ixRhythmAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
                 sR = std::tanh (sR * v.driveAmt) / std::tanh (v.driveAmt);
             }
 
-            outL[i] += sL * v.envVal * v.gainL;
-            outR[i] += sR * v.envVal * v.gainR;
+            float amp = v.envVal * fadeGain;
+            outL[i] += sL * amp * v.gainL;
+            outR[i] += sR * amp * v.gainR;
 
-            v.currentPos += v.pitchRatio;
+            double stepRatio = v.inLoopRegion ? v.loopPitchRatio : v.pitchRatio;
+            v.currentPos += (v.playingReverse ? -stepRatio : stepRatio);
         }
     }
 }
@@ -645,6 +869,8 @@ bool NoiseMu6ixRhythmAudioProcessor::savePresetMn6x (const juce::File& file)
         auto* gx = groupsXml->createNewChildElement ("GROUP");
         gx->setAttribute ("name", g.name);
         gx->setAttribute ("muted", g.muted ? 1 : 0);
+        gx->setAttribute ("rrSet", g.rrSetId);
+        gx->setAttribute ("ksNote", g.keyswitchNote);
     }
 
     auto* zonesXml = xml->createNewChildElement ("ZONES");
@@ -666,6 +892,13 @@ bool NoiseMu6ixRhythmAudioProcessor::savePresetMn6x (const juce::File& file)
         zx->setAttribute ("lStart", z.loopStartNorm);
         zx->setAttribute ("lEnd", z.loopEndNorm);
         zx->setAttribute ("sLoop", z.sampleLoop ? 1 : 0);
+        zx->setAttribute ("lMode", z.loopMode);
+        zx->setAttribute ("lXfade", z.loopCrossfade);
+        zx->setAttribute ("lTune", z.loopTuneCents);
+        zx->setAttribute ("lCount", z.loopCount);
+        zx->setAttribute ("rev", z.reverse ? 1 : 0);
+        zx->setAttribute ("fIn", z.fadeInNorm);
+        zx->setAttribute ("fOut", z.fadeOutNorm);
         zx->setAttribute ("pitch", z.pitchSemi);
         zx->setAttribute ("pan", z.pan);
         zx->setAttribute ("vol", z.volume);
@@ -710,9 +943,16 @@ bool NoiseMu6ixRhythmAudioProcessor::loadPresetMn6x (const juce::File& file)
         const juce::ScopedLock sl (zoneLock);
         groups.clear();
         for (auto* gx : groupsXml->getChildIterator())
-            groups.push_back ({ gx->getStringAttribute ("name", "Group"), gx->getIntAttribute ("muted", 0) != 0 });
+        {
+            SampleGroup g;
+            g.name = gx->getStringAttribute ("name", "Group");
+            g.muted = gx->getIntAttribute ("muted", 0) != 0;
+            g.rrSetId = gx->getIntAttribute ("rrSet", 0);
+            g.keyswitchNote = gx->getIntAttribute ("ksNote", -1);
+            groups.push_back (g);
+        }
         if (groups.empty())
-            groups.push_back ({ "Group 1", false });
+            groups.push_back ({ "Group 1", false, 0, -1 });
         selectedGroupIndex = 0;
     }
 
@@ -744,6 +984,13 @@ bool NoiseMu6ixRhythmAudioProcessor::loadPresetMn6x (const juce::File& file)
                 z.loopStartNorm = static_cast<float> (zx->getDoubleAttribute ("lStart", 0.15));
                 z.loopEndNorm = static_cast<float> (zx->getDoubleAttribute ("lEnd", 0.85));
                 z.sampleLoop = zx->getIntAttribute ("sLoop", 0) != 0;
+                z.loopMode = zx->getIntAttribute ("lMode", 0);
+                z.loopCrossfade = static_cast<float> (zx->getDoubleAttribute ("lXfade", 0.05));
+                z.loopTuneCents = static_cast<float> (zx->getDoubleAttribute ("lTune", 0.0));
+                z.loopCount = zx->getIntAttribute ("lCount", 0);
+                z.reverse = zx->getIntAttribute ("rev", 0) != 0;
+                z.fadeInNorm = static_cast<float> (zx->getDoubleAttribute ("fIn", 0.0));
+                z.fadeOutNorm = static_cast<float> (zx->getDoubleAttribute ("fOut", 0.0));
                 z.pitchSemi = static_cast<float> (zx->getDoubleAttribute ("pitch", 0.0));
                 z.pan = static_cast<float> (zx->getDoubleAttribute ("pan", 0.0));
                 z.volume = static_cast<float> (zx->getDoubleAttribute ("vol", 1.0));

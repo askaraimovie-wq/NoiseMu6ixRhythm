@@ -14,7 +14,7 @@ public:
     juce::Label label;
 };
 
-// 10-Octave Compact Color-Coded Piano Strip (C0..C10)
+// 10-Octave Compact Color-Coded Piano Strip (with RED Keyswitch highlight!)
 class ColorPianoStrip : public juce::Component
 {
 public:
@@ -30,19 +30,33 @@ private:
     int pressedNote = -1;
 };
 
-// Compact Kontakt-Style Group Editor Strip (EDIT tab only)
+// Kontakt-Style Group Editor Sub-Tab: 5x5 Vertical Grid (25 visible, Row 6+ Scrolls) + Rename + Mute + RR Set + Keyswitch
 class GroupEditorPanel : public juce::Component
 {
 public:
     GroupEditorPanel (NoiseMu6ixRhythmAudioProcessor& p);
     void paint (juce::Graphics& g) override;
     void resized() override;
-    void rebuildGroupButtons();
+    void rebuildGroupGrid();
 
     std::function<void()> onGroupChanged;
 
 private:
     NoiseMu6ixRhythmAudioProcessor& processor;
+
+    struct GroupTile : public juce::Component
+    {
+        GroupTile (NoiseMu6ixRhythmAudioProcessor& p, int idx, std::function<void(int)> onSel, std::function<void()> onMut);
+        void paint (juce::Graphics& g) override;
+        void resized() override;
+        void mouseDown (const juce::MouseEvent& e) override;
+
+        NoiseMu6ixRhythmAudioProcessor& processor;
+        int groupIndex = 0;
+        std::function<void(int)> onSelect;
+        juce::Label nameLbl;
+        juce::ToggleButton muteBtn { "M" };
+    };
 
     juce::Label titleLabel;
     juce::ToggleButton editAllGroupsBtn { "Edit All Groups" };
@@ -51,12 +65,24 @@ private:
     juce::TextButton createGroupBtn { "+ Empty Group" };
     juce::TextButton deleteGroupBtn { "Del Grp" };
 
-    juce::Viewport groupListViewport;
-    juce::Component groupListContent;
-    juce::OwnedArray<juce::TextButton> groupBtns;
+    // 5x5 Vertical Scrollable Grid
+    juce::Viewport gridViewport;
+    juce::Component gridContent;
+    juce::OwnedArray<GroupTile> groupTiles;
+
+    // Group Start Options Bar (Name, RR Set, Keyswitch)
+    juce::Label startBarLabel;
+    juce::Label nameFieldLabel;
+    juce::TextEditor groupNameEdit;
+    juce::Label rrSetLabel;
+    juce::ComboBox rrSetBox;
+    juce::Label ksLabel;
+    juce::ComboBox keyswitchBox;
+
+    void syncStartBar();
 };
 
-// 10-Octave Key Mapper: Read-Only on MAIN tab; Full Edit + Selected Groups Only + Zone Solo + Multi-Select on EDIT tab
+// 10-Octave Key Mapper (Zoomable, Multi-Select, Auto-Grid, Auto-Map, Auto-Spread, Red Keyswitch)
 class KeyMapperComponent : public juce::Component
 {
 public:
@@ -70,6 +96,9 @@ public:
     void clearSelection();
     void selectSingleZone (int idx);
     void autoGridSelectedZones();
+    void autoMapSelectedByFilename();
+    void autoSpreadKeyRanges();
+    void moveSelectedZonesToGroup (int newGroupIdx);
     const std::set<int>& getSelectedZoneIndices() const { return selectedZoneIndices; }
 
     void paint (juce::Graphics& g) override;
@@ -95,12 +124,7 @@ private:
     juce::Point<float> marqueeStart;
     juce::Point<float> marqueeCurrent;
 
-    struct ZoneKeySnapshot
-    {
-        int index = 0;
-        int lowKey = 60;
-        int highKey = 60;
-    };
+    struct ZoneKeySnapshot { int index = 0; int lowKey = 60; int highKey = 60; };
 
     enum class DragMode { None, Move, LeftEdge, RightEdge, TopEdge, BottomEdge };
     DragMode dragMode = DragMode::None;
@@ -117,10 +141,12 @@ private:
     void sanitizeSelection();
 };
 
+// Zoomable Kontakt-Style Sample Wave Editor with Grid & Snap
 class WaveEditorComponent : public juce::Component
 {
 public:
     WaveEditorComponent (NoiseMu6ixRhythmAudioProcessor& p);
+    void setSnapMode (int mode) { snapMode = mode; repaint(); } // 0=Off, 1=Grid, 2=Zero-X
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
@@ -130,8 +156,11 @@ public:
 
 private:
     NoiseMu6ixRhythmAudioProcessor& processor;
+    int snapMode = 0;
     enum class MarkerDrag { None, Start, End, LoopStart, LoopEnd };
     MarkerDrag activeDrag = MarkerDrag::None;
+
+    float applySnap (float normX, const SampleZone& z) const;
 };
 
 class RhythmSequencerComponent : public juce::Component
@@ -154,6 +183,8 @@ class MainPluginView : public juce::Component,
 {
 public:
     enum class ActiveTab { Main = 0, Edit };
+    enum class EditSubTab { Group = 0, Mapping, Wave };
+    enum class WaveSubTab { Loop = 0, GridSync, EditTone };
 
     MainPluginView (NoiseMu6ixRhythmAudioProcessor& p, std::function<void(float)> onScaleSelected);
     void paint (juce::Graphics& g) override;
@@ -173,13 +204,20 @@ private:
     NoiseMu6ixRhythmAudioProcessor& audioProcessor;
     std::function<void(float)> scaleCallback;
     ActiveTab activeTab = ActiveTab::Main;
+    EditSubTab editSubTab = EditSubTab::Mapping;
+    WaveSubTab waveSubTab = WaveSubTab::Loop;
 
-    // Clickable Title for Scale Menu (50%, 75%, 100%, 125%)
+    // Clickable Title for Scale Menu
     juce::TextButton titleScaleBtn { "NOISE MU6IX RHYTHM" };
 
-    // TWO Navigation Tabs: MAIN and EDIT
+    // Top-level Tabs: MAIN and EDIT
     juce::TextButton tabMainBtn { "MAIN" };
     juce::TextButton tabEditBtn { "EDIT" };
+
+    // EDIT Sub-Tab Buttons: Group Editor | Mapping Editor | Wave Editor
+    juce::TextButton subGroupBtn { "Group Editor" };
+    juce::TextButton subMapBtn   { "Mapping Editor" };
+    juce::TextButton subWaveBtn  { "Wave Editor" };
 
     // Library Panel
     juce::TextButton addLibBtn { "+ ADD LIBRARY" };
@@ -193,7 +231,7 @@ private:
     juce::TextButton saveBtn { "SAVE" };
     juce::TextButton saveAsBtn { "SAVE AS" };
 
-    // MAIN Tab Components
+    // ---------------- MAIN TAB ----------------
     KeyMapperComponent mainKeyMapper;
     RhythmSequencerComponent seqComp;
     juce::TextButton playPauseBtn { "PLAY" };
@@ -205,31 +243,81 @@ private:
     juce::ComboBox gridBox;
     juce::ToggleButton seqLoopBtn { "LOOP" };
 
-    // EDIT Tab Scrollable Container: Compact Group Editor + Mapping Editor + Sample Wave Editor
-    juce::Viewport editViewport;
-    juce::Component editContent;
-
+    // ---------------- EDIT SUB-TAB 1: GROUP EDITOR ----------------
     GroupEditorPanel groupPanel;
 
-    juce::Label editKmLabel;
+    // ---------------- EDIT SUB-TAB 2: MAPPING EDITOR ----------------
     juce::ToggleButton frrBtn { "FRR" };
     juce::ToggleButton fvlBtn { "FVL" };
     juce::ToggleButton pitchTrackBtn { "PITCH" };
     juce::TextButton selectAllZonesBtn { "ALL" };
     juce::ToggleButton zoneSoloBtn { "Zone Solo" };
     juce::ToggleButton selGroupsOnlyBtn { "Sel Grp Only" };
+    juce::ToggleButton listViewBtn { "List View" };
     juce::TextButton autoGridBtn { "Auto Grid" };
+    juce::TextButton autoMapBtn { "Auto-Map" };
+    juce::TextButton spreadBtn { "Spread" };
+    juce::TextButton dupZoneBtn { "Dup" };
+    juce::ComboBox moveToGroupBox;
+    juce::ComboBox mapZoomBox;
     juce::ComboBox velGridBox;
     juce::ComboBox zoneColourBox;
-    juce::Label zoneInfoBar;
-    KeyMapperComponent editKeyMapper;
 
-    juce::Label editWaveLabel;
+    // Editable Numeric Zone Info Bar
+    juce::Label lkLbl, hkLbl, lvLbl, hvLbl, rkLbl;
+    juce::TextEditor lkEdit, hkEdit, lvEdit, hvEdit, rkEdit;
+
+    // Zoomable Mapping Viewport + List View
+    juce::Viewport mapViewport;
+    KeyMapperComponent editKeyMapper;
+    float mapZoomFactor = 1.0f;
+
+    struct ZoneListModel : public juce::ListBoxModel
+    {
+        ZoneListModel (NoiseMu6ixRhythmAudioProcessor& p, std::function<void(int)> onSel) : proc (p), onSelect (std::move (onSel)) {}
+        int getNumRows() override { return static_cast<int> (proc.zones.size()); }
+        void paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool selected) override;
+        void listBoxItemClicked (int row, const juce::MouseEvent&) override { if (onSelect) onSelect (row); }
+        NoiseMu6ixRhythmAudioProcessor& proc;
+        std::function<void(int)> onSelect;
+    };
+    ZoneListModel zoneListModel;
+    juce::ListBox zoneListBox;
+
+    // ---------------- EDIT SUB-TAB 3: WAVE EDITOR ----------------
     juce::ComboBox trackSelectBox;
     juce::ToggleButton realRRBtn { "RR" };
-    juce::ToggleButton sampleLoopBtn { "LOOP" };
-    WaveEditorComponent waveEditor;
+    juce::ComboBox waveZoomBox;
+    juce::ComboBox waveSnapBox;
+    juce::Label waveInfoLabel;
 
+    juce::Viewport waveViewport;
+    WaveEditorComponent waveEditor;
+    float waveZoomFactor = 1.0f;
+
+    // Kontakt-style 3 Wave Sub-Tabs below waveform
+    juce::TextButton waveSubLoopBtn { "Sample Loop" };
+    juce::TextButton waveSubGridBtn { "Grid / Sync" };
+    juce::TextButton waveSubToneBtn { "Edit / Tone" };
+
+    // Wave Sub-Tab 1: Loop
+    juce::ToggleButton sampleLoopBtn { "LOOP ON" };
+    juce::ComboBox loopModeBox;
+    LabeledKnob loopXfadeKnob { "X-Fade" }, loopTuneKnob { "L-Tune" };
+    juce::Label loopCountLbl;
+    juce::ComboBox loopCountBox;
+
+    // Wave Sub-Tab 2: Grid / Sync
+    juce::ToggleButton waveGridOnBtn { "Grid ON" };
+    juce::ComboBox waveGridModeBox;
+    juce::ComboBox waveGridWidthBox;
+    juce::Label waveBpmLbl;
+    juce::TextEditor waveBpmEdit;
+
+    // Wave Sub-Tab 3: Edit / Tone
+    juce::ToggleButton reverseBtn { "REV" };
+    juce::TextButton normalizeBtn { "NORM" };
+    LabeledKnob fadeInKnob { "Fade In" }, fadeOutKnob { "Fade Out" };
     LabeledKnob startKnob { "Start" }, endKnob { "End" }, loopStartKnob { "L-Start" }, loopEndKnob { "L-End" };
     LabeledKnob pitchKnob { "Pitch" }, panKnob { "Pan" }, volKnob { "Vol" };
     LabeledKnob attackKnob { "Atk" }, decayKnob { "Dec" }, sustainKnob { "Sus" }, releaseKnob { "Rel" };
@@ -246,7 +334,10 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser;
 
     void setActiveTab (ActiveTab tab);
-    void layoutEditContent (int viewportWidth);
+    void setEditSubTab (EditSubTab sub);
+    void setWaveSubTab (WaveSubTab sub);
+    void refreshMoveToGroupBox();
+    void applyNumericZoneEdits();
     void applyBpmText();
     void refreshLibraryFolder (const juce::File& folder);
     void saveAsDialog();
@@ -258,8 +349,8 @@ class NoiseMu6ixRhythmAudioProcessorEditor : public juce::AudioProcessorEditor,
                                              public juce::Timer
 {
 public:
-    static constexpr int baseWidth = 940;
-    static constexpr int baseHeight = 590;
+    static constexpr int baseWidth = 960;
+    static constexpr int baseHeight = 600;
 
     NoiseMu6ixRhythmAudioProcessorEditor (NoiseMu6ixRhythmAudioProcessor&);
     ~NoiseMu6ixRhythmAudioProcessorEditor() override;

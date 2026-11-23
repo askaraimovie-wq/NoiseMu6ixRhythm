@@ -58,27 +58,51 @@ struct SampleGroup
 {
     juce::String name { "Group 1" };
     bool muted = false;
+    int rrSetId = 0;         // 0 = Off, 1..8 = Round Robin Set ID
+    int keyswitchNote = -1;  // -1 = None (always active), 0..120 = MIDI Keyswitch note
+};
+
+enum class SampleLoopMode
+{
+    Forward = 0,
+    PingPong,
+    UntilRelease
 };
 
 struct SampleZone
 {
     juce::String name { "Sample" };
-    int groupIndex = 0; // Belongs to a SampleGroup (Kontakt-style)
+    int groupIndex = 0;
     int lowKey = 60;
     int highKey = 60;
     int rootKey = 60;
     int lowVel = 0;
     int highVel = 127;
-    // Default color is ALWAYS Blue (user can change manually via Color dropdown)
+    // Default color is ALWAYS Blue
     juce::Colour colour { 0xff4ca3ff };
     int colourIndex = 0;
 
-    // Per-Zone Independent Sample Wave Editor Parameters
+    // Per-Zone Sample Wave Editor Parameters
     float startNorm = 0.0f;
     float endNorm = 1.0f;
     float loopStartNorm = 0.15f;
     float loopEndNorm = 0.85f;
     bool sampleLoop = false;
+    int loopMode = 0;        // 0=Forward, 1=PingPong, 2=UntilRelease
+    float loopCrossfade = 0.05f; // 0.0..0.4 of loop length
+    float loopTuneCents = 0.0f;  // -100..+100 cents
+    int loopCount = 0;           // 0 = Infinite, 1..16 = fixed repeat count
+
+    bool reverse = false;
+    float fadeInNorm = 0.0f;     // 0.0..0.25 of active range
+    float fadeOutNorm = 0.0f;    // 0.0..0.25 of active range
+
+    // Wave Grid / Sync metadata (per zone)
+    bool waveGridOn = false;
+    bool waveGridAuto = true;
+    int waveGridWidthIdx = 1;    // 0=1/4, 1=1/8, 2=1/16, 3=1/32
+    float waveGridBpm = 120.0f;
+
     float pitchSemi = 0.0f;
     float pan = 0.0f;
     float volume = 1.0f;
@@ -106,6 +130,11 @@ struct ActiveVoice
     int midiNote = 60;
     double currentPos = 0.0;
     double pitchRatio = 1.0;
+    double loopPitchRatio = 1.0;
+    bool playingReverse = false;
+    bool inLoopRegion = false;
+    bool noteReleased = false;
+    int loopsCompleted = 0;
     float gainL = 1.0f;
     float gainR = 1.0f;
     float velocity = 1.0f;
@@ -126,6 +155,7 @@ public:
     static constexpr int numPaletteColours = 12;
     static juce::Colour getPaletteColour (int idx);
     static juce::String getPaletteColourName (int idx);
+    static int parseMidiNoteFromFilename (const juce::String& name);
 
     NoiseMu6ixRhythmAudioProcessor();
     ~NoiseMu6ixRhythmAudioProcessor() override;
@@ -138,7 +168,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "Noise Mu6ix Rhythm v1.0.8"; }
+    const juce::String getName() const override { return "Noise Mu6ix Rhythm v1.0.9"; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -156,6 +186,7 @@ public:
     // Group management (Kontakt-style)
     int createEmptyGroup();
     void deleteGroup (int groupIdx);
+    bool isKeyswitchNote (int midiNote) const;
 
     // Zone management
     int createEmptyZone (int key);
@@ -163,6 +194,8 @@ public:
     bool loadSampleIntoNewZone (const juce::File& file, int lowKey, int highKey, int rootKey, int lowVel = 0, int highVel = 127);
     void deleteZone (int index);
     void deleteZones (std::vector<int> indices);
+    int duplicateZone (int index);
+    void normalizeSelectedSample();
 
     void triggerNote (int midiNote, float velocity);
     void releaseNote (int midiNote);
@@ -189,6 +222,7 @@ public:
     std::atomic<bool> groupSoloEnabled { false };
     std::atomic<bool> zoneSoloEnabled { false };
     std::atomic<bool> selectByMidi { false };
+    std::atomic<int> activeKeyswitchNote { -1 };
 
     std::atomic<float> seqPlayheadNorm { 0.0f };
     std::atomic<int> lastPlayedNote { -1 };
@@ -207,11 +241,15 @@ private:
     uint64_t rrSeedCounter = 1;
     float lastRrPitch = 0.0f;
 
+    // Group Round-Robin cycle counters per RR Set (1..8)
+    std::array<int, 9> groupRRCounters {};
+
     std::array<float, 128> heldNotesVel {};
     double seqBarPhase = 0.0;
     bool wasTransportPlaying = false;
 
     void startVoice (int zoneIdx, int midiNote, float velocity);
+    bool isGroupActiveForNote (int groupIdx) const;
     bool isZoneAudible (int zoneIdx) const;
     std::vector<RhythmEvent> createDefaultEvents() const;
     bool hasAnyHeldNote() const;

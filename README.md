@@ -1,11 +1,13 @@
-# Noise Mu6ix Rhythm v1.0.8 (VST3)
+# Noise Mu6ix Rhythm v1.0.9 (VST3)
 
-## v1.0.8-ல் செய்துள்ள மாற்றங்கள் (`EDIT` பேஜில் மட்டும்):
-1. **Compact Kontakt-Style Group Editor:** Key Map Editor-க்கு மேலே சின்னதாக **Group Editor** சேர்க்கப்பட்டுள்ளது:
-   - **`Edit All Groups`**, **`Group Solo`**, **`Select by MIDI`**, **`+ Empty Group`**, **`Del Grp`** பட்டன்கள்.
-   - கீழே உள்ள Group List-ல் (`Group 1`, `Group 2`...) கிளிக் செய்து ஒவ்வொரு குரூப்பையும் செலக்ட் செய்யலாம் (`.mn6x` பிரீசெட்டிலும் குரூப்கள் சேவ் ஆகும்).
-2. **Kontakt-Style Mapping Editor Header:**
-   - **`Sel Grp Only`** (Selected Groups Only): ஆன் செய்திருந்தால் தேர்ந்தெடுத்த குரூப்பின் சாம்பிள்கள் மட்டும் கீ மேப்பில் தெரியும்.
-   - **`Zone Solo`**: செலக்ட் செய்த ஜோன் மட்டும் தனியாகக் கேட்க.
-   - **`Auto Grid`**: செலக்ட் செய்த பல ஜோன்களை 0–127 வெலாசிட்டி லேயர்களாகத் தானாகச் சமமாகப் பிரிக்கும்.
-   - கீழே **Info Bar** (`Group | Key Range | Vel Range | Root Key | Sample`).
+## v1.0.9-ல் செய்துள்ள முக்கிய மாற்றங்கள் (Kontakt-Style Full Edit Suite):
+1. **EDIT பேஜில் 3 தனித்தனி டேப்கள்:** **`Group Editor` | `Mapping Editor` | `Wave Editor`** — மூன்றையும் கிளிக் செய்து முழு அளவில் எளிதாக எடிட் செய்யலாம்.
+2. **Group Editor (5×5 Vertical Grid + Keyswitch + Group Round Robin):**
+   - ஒரு ரோ-வில் 5 குரூப்கள், மொத்தம் 5 ரோ (25 குரூப்கள்) ஒரே நேரத்தில் தெரியும்; 6-வது ரோ (26-வது குரூப்) முதல் Vertical Scrollbar வரும்.
+   - குரூப் மேல் டபுள் கிளிக் செய்தோ அல்லது கீழே உள்ள `Name` பாக்ஸிலோ Rename செய்யலாம்; ஒவ்வொரு குரூப்பிலும் `M` (Mute) பட்டன் உள்ளது.
+   - **Group Start Options:** பல குரூப்களை ஒரே `RR Set` (1–8) மற்றும் ஒரே `Keyswitch` (`C0–B2`) கீ-க்கு செட் செய்தால், அந்த Keyswitch அழுத்தும்போது அந்த குரூப்கள் Round Robin-ல் இயங்கும். Keyswitch கீ-க்கள் பியானோவில் **சிவப்பு (Red)** நிறத்தில் தெரியும்.
+3. **Mapping Editor:**
+   - **Editable Numeric Bar** (`LowK`, `HighK`, `LowV`, `HighV`, `Root`), **`Move->Grp`**, **`Dup`**, **`Auto-Map`** (ஃபைல் பெயரில் இருந்து தானாக மேப் செய்ய), **`Spread`** (காலியான கீ-க்களை நிரப்ப), **`List View`**, மற்றும் **`Zoom` (100% / 150% / 200%)**.
+4. **Wave Editor:**
+   - மேலே **`Zoom` (100% / 200% / 400%)**, **`Snap` (`Off`, `Grid`, `Zero-X`)**, **`S.Start | S.End | Len`**.
+   - கீழே 3 சப்-டேப்கள்: **`Sample Loop`** (`Forward` / `Ping-Pong` / `Until Release`, `X-Fade`, `L-Tune`, `Count`), **`Grid / Sync`** (`Grid ON`, `Auto/Fix`, `Width`, `BPM`), மற்றும் **`Edit / Tone`** (`REV`, `NORM`, `Fade In/Out` + 13 Per-Zone நாப்கள்).
