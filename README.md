@@ -1,13 +1,13 @@
-# RYTHME v1.2.0 (VST3)
+# RYTHME v1.2.1 (VST3)
 
-## இந்த வெர்ஷனில் செய்துள்ள முழு மாற்றங்கள்:
-1. **N6 லோகோ & RYTHME டைட்டில்:**
-   - மேல் இடது மூலையில் **`N6`** லோகோ மற்றும் **`RYTHME`** (CAPITAL) டைட்டில் அமைக்கப்பட்டுள்ளது (கிளிக் செய்தால் UI Zoom 50%–125% மெனு வரும்).
-   - அதற்குக் கீழே **`+ ADD LIBRARY`**, **`A-Z`**, **`DEL`** பட்டன்களும், Native Instruments ஸ்டைல் Library பாக்ஸும் உள்ளன.
-   - மேல் வரிசையில் பழைய டைட்டில் இருந்த இடத்தில் **`MAIN`** மற்றும் **`EDIT`** பட்டன்கள் வைக்கப்பட்டுள்ளன.
-2. **MAIN பக்கம்:**
-   - `KEY MAP (VIEW ONLY)` எழுத்து நீக்கப்பட்டு Key Map மேலே ஏற்றப்பட்டுள்ளது; **`RHYTHM SEQUENCER`** பெரிய எழுத்தில் மேலே நகர்த்தப்பட்டு பெரிய Sequencer கட்டம் கொடுக்கப்பட்டுள்ளது.
-3. **EDIT பக்கம் (Scrollable & Uniform Switches):**
-   - **Group Strip:** `+ Grp`, **`Del Grp`** (குறைந்தது 1 குரூப் பாதுகாப்பாக இருக்கும்), Rename, `M` (Mute), `KS` (Keyswitch), மற்றும் வலதுபுறத்தில் **Vertical Volume & Pan Faders**.
-   - **Key Mapper:** `FVL` நீக்கப்பட்டு, `FRR`, `PITCH`, `ALL`, `Del`, `Auto Grid` அனைத்தும் ஒரே சீரான சுவிட்ச்/பட்டன்களாக மாற்றப்பட்டுள்ளன; நீங்கள் ரெக்கார்ட் செய்யும் Velocity Layers துல்லியமாக வேலை செய்யும்.
-   - **Wave Editor:** சாம்பிளின் பெயர் மட்டுமே நேரடியாகத் தெரியும் (`Track 1:` நீக்கம்), **`Play`**, `RR`, `LOOP` (ஆன் செய்தால் `LS`/`LE` மார்க்கர்கள் தெளிவாகத் தெரியும்), **`Z-Cross`** (Zero-Crossing Snap), `REV`, `NORM`, **`Reset`**, மற்றும் 2 வரிசை பெரிய நாப்கள் + 4 FX ஸ்லாட்கள் (`EQ`, `Comp`, `Sat`, `Delay`, `Reverb`).
+## இந்த v1.2.1 பதிப்பில் அமைக்கப்பட்டுள்ளவை:
+1. **Persistent Expandable Library + Mounted Card `X` Close:**
+   - ஒருமுறை சேர்த்த Library (`DRUMS` → `Kick`) நிரந்தரமாகச் சேமிக்கப்படும்; Category பாக்ஸைக் கிளிக் செய்தால் திறக்கும்/மூடும்.
+   - `MAIN` பக்கத்தில் Mounted Card-ல் **`X`** அழுத்தினால் காலியாகி (`Empty`) விடும்; மீண்டும் ஐட்டத்தைக் கிளிக் செய்தால் லோட் ஆகும்.
+2. **Group Controls (`EDIT` பேஜ்):**
+   - `+ Grp`, `Del Grp`, `M` (Mute), `S` (Solo), **`Sel Grp`** (தேர்ந்தெடுத்த குரூப் மட்டும் மேப்பில் தெரிய), `KS`, மற்றும் **Horizontal `Group Vol` & `Group Pan` Faders** (Group 1/2 X-Fade இல்லை).
+3. **Wave Editor + `Auto Loop Z-Cross` + `Crossfade` (Loop Click Removal):**
+   - லூப் மீண்டும் தொடங்கும் இடத்தில் "டிக்" சத்தம் வராமல் மென்மையாகக் கலக்க **`Crossfade`** Horizontal Fader மற்றும் **`Auto Loop Z-Cross`** சுவிட்ச்.
+   - `Start`, `End`, `Loop Start`, `Loop End` + `Fade In / Fade Out` மவுஸ் ஹேண்டில்கள்.
+4. **All Horizontal Faders + Divider Line for Effects:**
+   - Sample & Effects கண்ட்ரோல்கள் அனைத்தும் **Horizontal Faders**-ஆக மாற்றப்பட்டு, Effects பகுதிக்கு மேலே பிரிக்கும் கோடு வைக்கப்பட்டுள்ளது.

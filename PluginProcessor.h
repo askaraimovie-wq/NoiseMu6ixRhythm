@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cmath>
 #include <functional>
+#include <string>
 
 struct FastSVF
 {
@@ -98,6 +99,7 @@ struct SampleGroup
 
     juce::String name { "Group 1" };
     bool muted = false;
+    bool soloed = false;
     int keyswitchNote = -1; // -1 = None, 0..35
     float volume = 1.0f;
     float pan = 0.0f;
@@ -121,7 +123,10 @@ struct SampleZone
     float loopStartNorm = 0.15f;
     float loopEndNorm = 0.85f;
     bool sampleLoop = false;
-    bool autoZeroCross = true;
+    bool autoLoopZeroCross = true;
+    float loopCrossfade = 0.04f;
+    float fadeInNorm = 0.0f;
+    float fadeOutNorm = 0.0f;
     bool reverse = false;
 
     float pitchSemi = 0.0f;
@@ -162,6 +167,14 @@ struct ActiveVoice
     float releaseDec = 0.001f;
     FastSVF filterL;
     FastSVF filterR;
+};
+
+struct LibraryCategoryEntry
+{
+    juce::String name;
+    juce::File folder;
+    bool expanded = false;
+    std::vector<juce::File> items;
 };
 
 class RythmeAudioProcessor : public juce::AudioProcessor
@@ -219,6 +232,14 @@ public:
     bool savePresetMn6x (const juce::File& file);
     bool loadPresetMn6x (const juce::File& file);
 
+    // Persistent Library Registry (survives across reopen/reload)
+    void addLibraryFolderPersistent (const juce::File& folder);
+    void sortLibraryPersistent();
+    void removeLibraryEntryPersistent (int catIdx);
+    void toggleLibraryCategoryExpanded (int catIdx);
+    void setLoadedItemInPanel (const juce::String& displayName, const juce::File& file, int keyHint = -1);
+    void clearLoadedItemPanel();
+
     int getGridDivisions() const;
     double getCurrentSampleRate() const { return currentSampleRate; }
 
@@ -232,6 +253,14 @@ public:
     std::vector<SampleZone> zones;
     int selectedZoneIndex = -1;
 
+    // Persistent library categories + currently mounted item on MAIN panel
+    std::vector<LibraryCategoryEntry> libraryCategories;
+    bool loadedItemActive = false;
+    juce::String loadedItemName;
+    juce::File loadedItemFile;
+    int loadedItemKey = -1;
+
+    std::atomic<bool> selectGroupOnly { true };
     std::atomic<int> activeKeyswitchNote { -1 };
     std::atomic<float> seqPlayheadNorm { 0.0f };
     std::atomic<int> lastPlayedNote { -1 };
@@ -255,8 +284,13 @@ private:
     double seqBarPhase = 0.0;
     bool wasTransportPlaying = false;
 
+    juce::File getRegistryFile() const;
+    void saveLibraryRegistry();
+    void loadLibraryRegistry();
+
     void startVoice (int zoneIdx, int midiNote, float velocity);
     bool isGroupActiveForNote (int groupIdx) const;
+    bool hasAnySoloedGroup() const;
     std::vector<RhythmEvent> createDefaultEvents() const;
     bool hasAnyHeldNote() const;
 

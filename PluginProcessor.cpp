@@ -161,9 +161,167 @@ RythmeAudioProcessor::RythmeAudioProcessor()
     heldNotesVel.fill (0.0f);
     groups.emplace_back();
     selectedGroupIndex = 0;
+    loadLibraryRegistry();
 }
 
 RythmeAudioProcessor::~RythmeAudioProcessor() = default;
+
+juce::File RythmeAudioProcessor::getRegistryFile() const
+{
+    auto appData = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                       .getChildFile ("NoiseMu6ixStudio")
+                       .getChildFile ("RYTHME");
+    appData.createDirectory();
+    return appData.getChildFile ("library_registry.xml");
+}
+
+void RythmeAudioProcessor::saveLibraryRegistry()
+{
+    juce::XmlElement root ("RYTHME_LIBRARY");
+    for (const auto& cat : libraryCategories)
+    {
+        auto* cx = root.createNewChildElement ("CATEGORY");
+        cx->setAttribute ("name", cat.name);
+        cx->setAttribute ("folder", cat.folder.getFullPathName());
+        cx->setAttribute ("expanded", cat.expanded ? 1 : 0);
+        for (const auto& item : cat.items)
+        {
+            auto* ix = cx->createNewChildElement ("ITEM");
+            ix->setAttribute ("file", item.getFullPathName());
+        }
+    }
+    root.writeTo (getRegistryFile());
+}
+
+void RythmeAudioProcessor::loadLibraryRegistry()
+{
+    libraryCategories.clear();
+    auto regFile = getRegistryFile();
+    if (! regFile.existsAsFile()) return;
+    auto xml = juce::XmlDocument::parse (regFile);
+    if (xml == nullptr || ! xml->hasTagName ("RYTHME_LIBRARY")) return;
+
+    for (auto* cx : xml->getChildIterator())
+    {
+        if (! cx->hasTagName ("CATEGORY")) continue;
+        LibraryCategoryEntry cat;
+        cat.name = cx->getStringAttribute ("name", "LIBRARY");
+        cat.folder = juce::File (cx->getStringAttribute ("folder"));
+        cat.expanded = cx->getIntAttribute ("expanded", 0) != 0;
+
+        for (auto* ix : cx->getChildIterator())
+        {
+            if (ix->hasTagName ("ITEM"))
+            {
+                juce::File f (ix->getStringAttribute ("file"));
+                if (f.existsAsFile()) cat.items.push_back (f);
+            }
+        }
+        // If items weren't explicitly saved or folder has new files, refresh from folder
+        if (cat.items.empty() && cat.folder.isDirectory())
+        {
+            for (const auto& f : cat.folder.findChildFiles (juce::File::findFiles, true, "*.wav;*.aiff;*.flac;*.mn6x"))
+                cat.items.push_back (f);
+        }
+        if (! cat.items.empty() || cat.folder.isDirectory())
+            libraryCategories.push_back (std::move (cat));
+    }
+}
+
+void RythmeAudioProcessor::addLibraryFolderPersistent (const juce::File& folder)
+{
+    if (! folder.isDirectory()) return;
+
+    const juce::ScopedLock sl (zoneLock);
+    for (auto& existing : libraryCategories)
+    {
+        if (existing.folder == folder)
+        {
+            existing.items.clear();
+            for (const auto& f : folder.findChildFiles (juce::File::findFiles, true, "*.wav;*.aiff;*.flac;*.mn6x"))
+                existing.items.push_back (f);
+            existing.expanded = true;
+            saveLibraryRegistry();
+            return;
+        }
+    }
+
+    LibraryCategoryEntry cat;
+    cat.name = folder.getFileName().toUpperCase();
+    cat.folder = folder;
+    cat.expanded = true;
+    for (const auto& f : folder.findChildFiles (juce::File::findFiles, true, "*.wav;*.aiff;*.flac;*.mn6x"))
+        cat.items.push_back (f);
+    libraryCategories.push_back (std::move (cat));
+    saveLibraryRegistry();
+}
+
+void RythmeAudioProcessor::sortLibraryPersistent()
+{
+    const juce::ScopedLock sl (zoneLock);
+    std::sort (libraryCategories.begin(), libraryCategories.end(),
+        [] (const LibraryCategoryEntry& a, const LibraryCategoryEntry& b)
+        {
+            return a.name.compareIgnoreCase (b.name) < 0;
+        });
+    for (auto& cat : libraryCategories)
+    {
+        std::sort (cat.items.begin(), cat.items.end(),
+            [] (const juce::File& a, const juce::File& b)
+            {
+                return a.getFileNameWithoutExtension().compareIgnoreCase (b.getFileNameWithoutExtension()) < 0;
+            });
+    }
+    saveLibraryRegistry();
+}
+
+void RythmeAudioProcessor::removeLibraryEntryPersistent (int catIdx)
+{
+    const juce::ScopedLock sl (zoneLock);
+    if (catIdx >= 0 && catIdx < static_cast<int> (libraryCategories.size()))
+    {
+        libraryCategories.erase (libraryCategories.begin() + catIdx);
+        saveLibraryRegistry();
+    }
+}
+
+void RythmeAudioProcessor::toggleLibraryCategoryExpanded (int catIdx)
+{
+    const juce::ScopedLock sl (zoneLock);
+    if (catIdx >= 0 && catIdx < static_cast<int> (libraryCategories.size()))
+    {
+        libraryCategories[static_cast<size_t> (catIdx)].expanded = ! libraryCategories[static_cast<size_t> (catIdx)].expanded;
+        saveLibraryRegistry();
+    }
+}
+
+void RythmeAudioProcessor::setLoadedItemInPanel (const juce::String& displayName, const juce::File& file, int keyHint)
+{
+    loadedItemActive = true;
+    loadedItemName = displayName;
+    loadedItemFile = file;
+    loadedItemKey = keyHint;
+}
+
+void RythmeAudioProcessor::clearLoadedItemPanel()
+{
+    const juce::ScopedLock sl (zoneLock);
+    if (loadedItemKey >= 0)
+    {
+        for (int i = static_cast<int> (zones.size()) - 1; i >= 0; --i)
+        {
+            if (zones[static_cast<size_t> (i)].rootKey == loadedItemKey)
+            {
+                deleteZone (i);
+                break;
+            }
+        }
+    }
+    loadedItemActive = false;
+    loadedItemName.clear();
+    loadedItemFile = juce::File();
+    loadedItemKey = -1;
+}
 
 std::vector<RhythmEvent> RythmeAudioProcessor::createDefaultEvents() const
 {
@@ -248,7 +406,6 @@ int RythmeAudioProcessor::createEmptyGroup()
 bool RythmeAudioProcessor::deleteSelectedGroup()
 {
     const juce::ScopedLock sl (zoneLock);
-    // Safe guard: keep at least 1 group
     if (groups.size() <= 1 || selectedGroupIndex < 0 || selectedGroupIndex >= static_cast<int> (groups.size()))
         return false;
 
@@ -292,7 +449,7 @@ int RythmeAudioProcessor::createEmptyZone (int key)
     z.lowVel = 0;
     z.highVel = 127;
     z.realRREnabled = true;
-    z.autoZeroCross = true;
+    z.autoLoopZeroCross = true;
     z.seqEvents = createDefaultEvents();
     z.colourIndex = 0;
     z.colour = getPaletteColour (0);
@@ -389,6 +546,9 @@ void RythmeAudioProcessor::resetSelectedZoneDefaults()
     z.endNorm = 1.0f;
     z.loopStartNorm = 0.15f;
     z.loopEndNorm = 0.85f;
+    z.loopCrossfade = 0.04f;
+    z.fadeInNorm = 0.0f;
+    z.fadeOutNorm = 0.0f;
     z.pitchSemi = 0.0f;
     z.pan = 0.0f;
     z.volume = 1.0f;
@@ -413,7 +573,7 @@ float RythmeAudioProcessor::snapNormToZeroCrossing (int zoneIndex, float rawNorm
     if (zoneIndex < 0 || zoneIndex >= static_cast<int> (zones.size()))
         return rawNorm;
     const auto& z = zones[static_cast<size_t> (zoneIndex)];
-    if (! z.autoZeroCross || z.layers.empty())
+    if (! z.autoLoopZeroCross || z.layers.empty())
         return rawNorm;
 
     int lIdx = juce::jlimit (0, static_cast<int> (z.layers.size()) - 1, z.selectedLayerIndex);
@@ -423,7 +583,7 @@ float RythmeAudioProcessor::snapNormToZeroCrossing (int zoneIndex, float rawNorm
 
     const float* d = buf.getReadPointer (0);
     int target = juce::jlimit (1, total - 2, static_cast<int> (rawNorm * total));
-    int searchRadius = std::min (512, total / 8);
+    int searchRadius = std::min (600, total / 6);
 
     for (int off = 0; off < searchRadius; ++off)
     {
@@ -435,12 +595,21 @@ float RythmeAudioProcessor::snapNormToZeroCrossing (int zoneIndex, float rawNorm
     return rawNorm;
 }
 
+bool RythmeAudioProcessor::hasAnySoloedGroup() const
+{
+    for (const auto& g : groups)
+        if (g.soloed) return true;
+    return false;
+}
+
 bool RythmeAudioProcessor::isGroupActiveForNote (int groupIdx) const
 {
     if (groupIdx < 0 || groupIdx >= static_cast<int> (groups.size()))
         return false;
     const auto& g = groups[static_cast<size_t> (groupIdx)];
     if (g.muted)
+        return false;
+    if (hasAnySoloedGroup() && ! g.soloed)
         return false;
 
     if (g.keyswitchNote >= 0)
@@ -528,7 +697,6 @@ void RythmeAudioProcessor::startVoice (int zoneIdx, int midiNote, float velocity
         rrExtraAttackSec = u3 * 0.0045f;
     }
 
-    // True Velocity Response (natural velocity scaling for recorded velocity layers)
     float gain = std::pow (v.velocity, 1.15f);
 
     float totalAttackSec = std::max (0.0005f, z.attackSec + rrExtraAttackSec);
@@ -770,10 +938,12 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     float* outL = buffer.getWritePointer (0);
     float* outR = buffer.getWritePointer (1);
 
+    bool anySolo = hasAnySoloedGroup();
+
     for (int gIdx = 0; gIdx < static_cast<int> (groups.size()); ++gIdx)
     {
         auto& grp = groups[static_cast<size_t> (gIdx)];
-        if (grp.muted) continue;
+        if (grp.muted || (anySolo && ! grp.soloed)) continue;
 
         bool hasActiveVoice = false;
         for (const auto& v : voices)
@@ -809,6 +979,11 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
                 int endSample = std::max (startSample + 2, static_cast<int> (z.endNorm * totalSamps));
                 int lStartSample = juce::jlimit (startSample, endSample - 2, static_cast<int> (z.loopStartNorm * totalSamps));
                 int lEndSample = juce::jlimit (lStartSample + 2, endSample, static_cast<int> (z.loopEndNorm * totalSamps));
+                int activeSpan = std::max (2, endSample - startSample);
+                int fadeInSamps = static_cast<int> (z.fadeInNorm * activeSpan);
+                int fadeOutSamps = static_cast<int> (z.fadeOutNorm * activeSpan);
+                int loopLen = std::max (2, lEndSample - lStartSample);
+                int xfadeSamps = static_cast<int> (z.loopCrossfade * loopLen);
 
                 const float* srcL = layer.buffer.getReadPointer (0);
                 const float* srcR = layer.buffer.getNumChannels() > 1 ? layer.buffer.getReadPointer (1) : srcL;
@@ -831,6 +1006,22 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
                     float sL = srcL[posInt] + frac * (srcL[posInt + 1] - srcL[posInt]);
                     float sR = srcR[posInt] + frac * (srcR[posInt + 1] - srcR[posInt]);
 
+                    // Loop Crossfade near loop end
+                    if (z.sampleLoop && ! z.reverse && xfadeSamps > 6 && posInt >= lEndSample - xfadeSamps)
+                    {
+                        float alpha = static_cast<float> (posInt - (lEndSample - xfadeSamps)) / static_cast<float> (xfadeSamps);
+                        int altPos = juce::jlimit (startSample, totalSamps - 2, lStartSample + (posInt - (lEndSample - xfadeSamps)));
+                        sL = sL * (1.0f - alpha) + srcL[altPos] * alpha;
+                        sR = sR * (1.0f - alpha) + srcR[altPos] * alpha;
+                    }
+
+                    // Mouse-dragged Start Fade-In & End Fade-Out
+                    float edgeGain = 1.0f;
+                    if (fadeInSamps > 4 && (posInt - startSample) < fadeInSamps)
+                        edgeGain *= static_cast<float> (posInt - startSample) / static_cast<float> (fadeInSamps);
+                    if (fadeOutSamps > 4 && (endSample - posInt) < fadeOutSamps)
+                        edgeGain *= static_cast<float> (endSample - posInt) / static_cast<float> (fadeOutSamps);
+
                     if (v.envStage == 0)
                     {
                         v.envVal += v.attackInc;
@@ -850,8 +1041,9 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
                     sL = v.filterL.processLP (sL);
                     sR = v.filterR.processLP (sR);
 
-                    gL[i] += sL * v.envVal * v.gainL;
-                    gR[i] += sR * v.envVal * v.gainR;
+                    float totalAmp = v.envVal * edgeGain;
+                    gL[i] += sL * totalAmp * v.gainL;
+                    gR[i] += sR * totalAmp * v.gainR;
                     v.currentPos += (v.playingReverse ? -v.pitchRatio : v.pitchRatio);
                 }
             }
@@ -885,6 +1077,7 @@ bool RythmeAudioProcessor::savePresetMn6x (const juce::File& file)
         auto* gx = groupsXml->createNewChildElement ("GROUP");
         gx->setAttribute ("name", g.name);
         gx->setAttribute ("muted", g.muted ? 1 : 0);
+        gx->setAttribute ("soloed", g.soloed ? 1 : 0);
         gx->setAttribute ("ksNote", g.keyswitchNote);
         gx->setAttribute ("vol", g.volume);
         gx->setAttribute ("pan", g.pan);
@@ -918,7 +1111,10 @@ bool RythmeAudioProcessor::savePresetMn6x (const juce::File& file)
         zx->setAttribute ("lStart", z.loopStartNorm);
         zx->setAttribute ("lEnd", z.loopEndNorm);
         zx->setAttribute ("sLoop", z.sampleLoop ? 1 : 0);
-        zx->setAttribute ("zCross", z.autoZeroCross ? 1 : 0);
+        zx->setAttribute ("autoZLoop", z.autoLoopZeroCross ? 1 : 0);
+        zx->setAttribute ("lXfade", z.loopCrossfade);
+        zx->setAttribute ("fIn", z.fadeInNorm);
+        zx->setAttribute ("fOut", z.fadeOutNorm);
         zx->setAttribute ("rev", z.reverse ? 1 : 0);
         zx->setAttribute ("pitch", z.pitchSemi);
         zx->setAttribute ("pan", z.pan);
@@ -968,6 +1164,7 @@ bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
             SampleGroup g;
             g.name = gx->getStringAttribute ("name", "Group");
             g.muted = gx->getIntAttribute ("muted", 0) != 0;
+            g.soloed = gx->getIntAttribute ("soloed", 0) != 0;
             g.keyswitchNote = gx->getIntAttribute ("ksNote", -1);
             g.volume = static_cast<float> (gx->getDoubleAttribute ("vol", 1.0));
             g.pan = static_cast<float> (gx->getDoubleAttribute ("pan", 0.0));
@@ -1019,7 +1216,10 @@ bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
                 z.loopStartNorm = static_cast<float> (zx->getDoubleAttribute ("lStart", 0.15));
                 z.loopEndNorm = static_cast<float> (zx->getDoubleAttribute ("lEnd", 0.85));
                 z.sampleLoop = zx->getIntAttribute ("sLoop", 0) != 0;
-                z.autoZeroCross = zx->getIntAttribute ("zCross", 1) != 0;
+                z.autoLoopZeroCross = zx->getIntAttribute ("autoZLoop", 1) != 0;
+                z.loopCrossfade = static_cast<float> (zx->getDoubleAttribute ("lXfade", 0.04));
+                z.fadeInNorm = static_cast<float> (zx->getDoubleAttribute ("fIn", 0.0));
+                z.fadeOutNorm = static_cast<float> (zx->getDoubleAttribute ("fOut", 0.0));
                 z.reverse = zx->getIntAttribute ("rev", 0) != 0;
                 z.pitchSemi = static_cast<float> (zx->getDoubleAttribute ("pitch", 0.0));
                 z.pan = static_cast<float> (zx->getDoubleAttribute ("pan", 0.0));
