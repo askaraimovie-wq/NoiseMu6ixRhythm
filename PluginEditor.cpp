@@ -550,7 +550,7 @@ void PermanentTitleScaleButton::paint (juce::Graphics& g)
 
     g.setColour (juce::Colour (0xfff2f4f8));
     g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
-    juce::String txt = processor.pluginTitleText.isEmpty() ? "NOISE MU6IX" : processor.pluginTitleText;
+    juce::String txt = processor.pluginTitleText.isEmpty() ? "KINETIK" : processor.pluginTitleText;
     g.drawText (txt, r.reduced (6.0f, 0.0f), juce::Justification::centred, true);
 }
 
@@ -590,7 +590,7 @@ PresetBarWidget::PresetBarWidget (RythmeAudioProcessor& p,
 
     libNameEditor.setMultiLine (false);
     libNameEditor.setJustification (juce::Justification::centred);
-    libNameEditor.setText (processor.libraryNameText.isEmpty() ? "KINETIK" : processor.libraryNameText, juce::dontSendNotification);
+    libNameEditor.setText (processor.libraryNameText.isEmpty() ? "Default" : processor.libraryNameText, juce::dontSendNotification);
     libNameEditor.setFont (juce::FontOptions (12.0f, juce::Font::bold));
     libNameEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff090a0c));
     libNameEditor.setColour (juce::TextEditor::textColourId, juce::Colour (0xfff2f4f8));
@@ -612,7 +612,7 @@ PresetBarWidget::PresetBarWidget (RythmeAudioProcessor& p,
 
 void PresetBarWidget::refreshTextFromProcessor()
 {
-    libNameEditor.setText (processor.libraryNameText.isEmpty() ? "KINETIK" : processor.libraryNameText, juce::dontSendNotification);
+    libNameEditor.setText (processor.libraryNameText.isEmpty() ? "Default" : processor.libraryNameText, juce::dontSendNotification);
 }
 
 void PresetBarWidget::buildFolderSubMenu (juce::PopupMenu& menu, const juce::File& dir, int& nextId, std::map<int, juce::File>& idMap)
@@ -2426,7 +2426,7 @@ void MainPluginView::chooseRootLibraryFolder()
 void MainPluginView::savePresetAction()
 {
     if (audioProcessor.libraryNameText.trim().isEmpty())
-        audioProcessor.libraryNameText = "KINETIK";
+        audioProcessor.libraryNameText = "Default";
     audioProcessor.currentPresetName = audioProcessor.libraryNameText.trim();
 
     if (audioProcessor.currentPresetFile != juce::File())

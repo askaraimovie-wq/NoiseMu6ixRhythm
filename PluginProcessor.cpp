@@ -211,7 +211,7 @@ juce::File RythmeAudioProcessor::getRegistryFile() const
 {
     auto appData = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
                        .getChildFile ("NoiseMu6ixStudio")
-                       .getChildFile ("NOISE_MU6IX");
+                       .getChildFile ("KINETIK");
     appData.createDirectory();
     return appData.getChildFile ("library_registry.xml");
 }
@@ -269,7 +269,7 @@ void RythmeAudioProcessor::setRootLibraryFolder (const juce::File& folder)
 
 void RythmeAudioProcessor::saveLibraryRegistry()
 {
-    juce::XmlElement root ("NOISE_MU6IX_LIBRARY");
+    juce::XmlElement root ("KINETIK_LIBRARY");
     root.setAttribute ("rootFolder", rootLibraryFolder.getFullPathName());
     for (const auto& cat : libraryCategories)
     {
@@ -1307,9 +1307,9 @@ bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
 
     apvts.replaceState (juce::ValueTree::fromXml (*xml));
     currentPresetName = xml->getStringAttribute ("presetName", file.getFileNameWithoutExtension());
-    libraryNameText = xml->getStringAttribute ("libraryName", "KINETIK");
+    libraryNameText = xml->getStringAttribute ("libraryName", "Default");
     brandLetters = xml->getStringAttribute ("brandLetters", "N6");
-    pluginTitleText = xml->getStringAttribute ("pluginTitleText", "NOISE MU6IX");
+    pluginTitleText = xml->getStringAttribute ("pluginTitleText", "KINETIK");
     logoStyleId = juce::jlimit (1, 4, xml->getIntAttribute ("logoStyleId", 1));
     logoColourIdx = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("logoColourIdx", 11));
     knobStyleId = juce::jlimit (1, 10, xml->getIntAttribute ("knobStyleId", 1));

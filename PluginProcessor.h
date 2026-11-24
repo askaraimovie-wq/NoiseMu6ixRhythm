@@ -9,8 +9,8 @@
 #include <functional>
 #include <string>
 
-#ifndef NOISE_MU6IX_AUTO_VERSION_STR
-#define NOISE_MU6IX_AUTO_VERSION_STR "v1.2.6"
+#ifndef KINETIK_AUTO_VERSION_STR
+#define KINETIK_AUTO_VERSION_STR "v1.2.6"
 #endif
 
 struct FastSVF
@@ -202,8 +202,8 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "NOISE MU6IX " + getBuildVersionString(); }
-    static juce::String getBuildVersionString() { return juce::String (NOISE_MU6IX_AUTO_VERSION_STR); }
+    const juce::String getName() const override { return "KINETIK " + getBuildVersionString(); }
+    static juce::String getBuildVersionString() { return juce::String (KINETIK_AUTO_VERSION_STR); }
 
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
@@ -275,8 +275,8 @@ public:
     int loadedItemKey = -1;
 
     juce::String brandLetters { "N6" };
-    juce::String pluginTitleText { "NOISE MU6IX" };
-    juce::String libraryNameText { "KINETIK" };
+    juce::String pluginTitleText { "KINETIK" };
+    juce::String libraryNameText { "Default" };
     int logoStyleId = 1;       // 1..4
     int logoColourIdx = 11;    // Vintage White default
     int knobStyleId = 1;       // 1..10
