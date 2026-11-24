@@ -126,17 +126,60 @@ private:
     juce::Colour activeCol { 0xfff2f4f8 };
 };
 
-// Right-side Title Scale Selector ("KINETIK") with 50%, 75%, 100% (Default), 120%, 150% popup
-class RightKinetikScaleButton : public juce::Component
+// Top-Left Title & Scale Selector ("KINETIK") with 50%, 75%, 100% (Default), 120%, 150% popup
+class LeftKinetikScaleButton : public juce::Component
 {
 public:
-    RightKinetikScaleButton (RythmeAudioProcessor& p, std::function<void(float)> onScaleSelected);
+    LeftKinetikScaleButton (RythmeAudioProcessor& p, std::function<void(float)> onScaleSelected);
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent&) override;
 
 private:
     RythmeAudioProcessor& processor;
     std::function<void(float)> onScale;
+};
+
+// Integrated Grid Box ("Grid" label + value dropdown inside one unit, matching BPM box)
+class UnifiedGridBox : public juce::Component
+{
+public:
+    UnifiedGridBox();
+    juce::ComboBox combo;
+    void paint (juce::Graphics& g) override;
+    void resized() override;
+};
+
+// Top mini bar above Wave: IN / OUT animated level meters + center-zero Master Volume knob (no text label)
+class TopIoMeterAndMasterKnob : public juce::Component
+{
+public:
+    TopIoMeterAndMasterKnob (RythmeAudioProcessor& p);
+    void paint (juce::Graphics& g) override;
+    void mouseDown (const juce::MouseEvent& e) override;
+    void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseDoubleClick (const juce::MouseEvent& e) override;
+
+private:
+    RythmeAudioProcessor& processor;
+    int dragStartY = 0;
+    float dragStartDb = 0.0f;
+    juce::Rectangle<float> getKnobBounds() const;
+};
+
+// Pitch Bend & Mod Wheel strip placed on the left side of the Piano Keyboard (like Serum / classic synths)
+class PitchModWheelsComponent : public juce::Component
+{
+public:
+    PitchModWheelsComponent (RythmeAudioProcessor& p);
+    void paint (juce::Graphics& g) override;
+    void mouseDown (const juce::MouseEvent& e) override;
+    void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseUp (const juce::MouseEvent& e) override;
+
+private:
+    RythmeAudioProcessor& processor;
+    int activeWheel = 0; // 1 = Pitch (spring-return), 2 = Mod (latching)
+    void updateWheelFromY (int y);
 };
 
 // Preset Dropdown (v) + Editable Library Name Box (default "KINETIK") + Save Icon Button
@@ -358,12 +401,13 @@ private:
     std::set<juce::String> mainHiddenKeys;
     std::set<juce::String> editHiddenKeys;
 
+    LeftKinetikScaleButton leftScaleBtn;
     PresetBarWidget presetBar;
-    RightKinetikScaleButton rightScaleBtn;
     EditModeIconButton editModeBtn;
     GearIconButton topGearBtn;
 
     // ---------------- MAIN TAB ----------------
+    TopIoMeterAndMasterKnob topIoMasterBar;
     LiveMainWaveDisplay mainWaveDisplay;
     juce::Label rhythmSeqHeaderLbl;
     RhythmSequencerComponent seqComp;
@@ -373,8 +417,7 @@ private:
     StyledHorizontalFader shuffleFader { "Shuffle", 0.0, 1.0, 0.0, 2 };
     StyledHorizontalFader timeRandFader { "Time Rnd", 0.0, 1.0, 0.0, 2 };
     StyledHorizontalFader velRandFader { "Vel Rnd", 0.0, 1.0, 0.0, 2 };
-    juce::Label gridLabel;
-    juce::ComboBox gridBox;
+    UnifiedGridBox gridUnit;
     StyledSwitchButton seqLoopBtn { "LOOP", true };
     StyledSwitchButton seqClearBtn { "Clr", false };
 
@@ -447,6 +490,7 @@ private:
     StyledSwitchButton gearDoneBtn { "DONE", false };
     LayoutCustomizeOverlay customizeOverlay;
 
+    PitchModWheelsComponent pitchModWheels;
     ColorPianoStrip bottomPiano;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> frrAtt, fvlAtt, pitchTrackAtt, seqLoopAtt, hostSyncAtt;

@@ -962,12 +962,36 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     float shuffleAmt = apvts.getRawParameterValue ("shuffle")->load();
     float timeRandAmt = apvts.getRawParameterValue ("timeRand")->load();
 
+    float midiInActivity = 0.0f;
     for (const auto metadata : midiMessages)
     {
         auto msg = metadata.getMessage();
-        if (msg.isNoteOn()) uiNoteOn (msg.getNoteNumber(), msg.getFloatVelocity());
-        else if (msg.isNoteOff()) uiNoteOff (msg.getNoteNumber());
+        if (msg.isNoteOn())
+        {
+            midiInActivity = std::max (midiInActivity, msg.getFloatVelocity());
+            uiNoteOn (msg.getNoteNumber(), msg.getFloatVelocity());
+        }
+        else if (msg.isNoteOff())
+        {
+            uiNoteOff (msg.getNoteNumber());
+        }
+        else if (msg.isPitchWheel())
+        {
+            float pw = (msg.getPitchWheelValue() - 8192) / 8192.0f;
+            pitchWheelNorm.store (juce::jlimit (-1.0f, 1.0f, pw));
+            midiInActivity = std::max (midiInActivity, std::abs (pw));
+        }
+        else if (msg.isController() && msg.getControllerNumber() == 1)
+        {
+            float mw = msg.getControllerValue() / 127.0f;
+            modWheelNorm.store (juce::jlimit (0.0f, 1.0f, mw));
+            midiInActivity = std::max (midiInActivity, mw);
+        }
     }
+    if (hasAnyHeldNote())
+        midiInActivity = std::max (midiInActivity, 0.75f);
+    float prevIn = inputMeterLevel.load();
+    inputMeterLevel.store (std::max (midiInActivity, prevIn * 0.86f));
 
     bool transportAllPlay = seqLoopOn && (internalPlaying.load() || (hostSyncOn && dawPlaying));
     bool anyMidiHeld = seqLoopOn && hasAnyHeldNote();
@@ -1158,7 +1182,8 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
                     float totalAmp = v.envVal * edgeGain;
                     gL[i] += sL * totalAmp * v.gainL;
                     gR[i] += sR * totalAmp * v.gainR;
-                    v.currentPos += (v.playingReverse ? -v.pitchRatio : v.pitchRatio);
+                    double liveBendRatio = std::pow (2.0, (pitchWheelNorm.load() * 2.0) / 12.0);
+                    v.currentPos += (v.playingReverse ? -(v.pitchRatio * liveBendRatio) : (v.pitchRatio * liveBendRatio));
                 }
             }
         }
@@ -1180,9 +1205,16 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
         }
     }
 
+    float mGain = juce::Decibels::decibelsToGain (masterGainDb.load(), -36.0f);
     float blockPeak = 0.0f;
     for (int i = 0; i < numSamples; ++i)
+    {
+        outL[i] *= mGain;
+        outR[i] *= mGain;
         blockPeak = std::max (blockPeak, std::max (std::abs (outL[i]), std::abs (outR[i])));
+    }
+    float prevOut = outputMeterLevel.load();
+    outputMeterLevel.store (std::max (juce::jlimit (0.0f, 1.0f, blockPeak), prevOut * 0.86f));
 
     {
         const juce::SpinLock::ScopedLockType ssl (scopeLock);
@@ -1307,7 +1339,7 @@ bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
 
     apvts.replaceState (juce::ValueTree::fromXml (*xml));
     currentPresetName = xml->getStringAttribute ("presetName", file.getFileNameWithoutExtension());
-    libraryNameText = xml->getStringAttribute ("libraryName", "KINETIK");
+    libraryNameText = xml->getStringAttribute ("libraryName", "");
     brandLetters = xml->getStringAttribute ("brandLetters", "N6");
     pluginTitleText = xml->getStringAttribute ("pluginTitleText", "KINETIK");
     logoStyleId = juce::jlimit (1, 4, xml->getIntAttribute ("logoStyleId", 1));

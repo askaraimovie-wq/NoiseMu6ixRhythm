@@ -10,7 +10,7 @@
 #include <string>
 
 #ifndef KINETIK_AUTO_VERSION_STR
-#define KINETIK_AUTO_VERSION_STR "v1.2.10"
+#define KINETIK_AUTO_VERSION_STR "v1.3.0"
 #endif
 
 struct FastSVF
@@ -276,7 +276,7 @@ public:
 
     juce::String brandLetters { "N6" };
     juce::String pluginTitleText { "KINETIK" };
-    juce::String libraryNameText { "KINETIK" };
+    juce::String libraryNameText { "" };
     int logoStyleId = 1;
     int logoColourIdx = 11;
     int knobStyleId = 1;
@@ -292,6 +292,11 @@ public:
     std::atomic<float> seqPlayheadNorm { 0.0f };
     std::atomic<int> lastPlayedNote { -1 };
     std::atomic<bool> internalPlaying { false };
+    std::atomic<float> pitchWheelNorm { 0.0f };     // -1.0 to +1.0
+    std::atomic<float> modWheelNorm { 0.0f };       // 0.0 to 1.0
+    std::atomic<float> masterGainDb { 0.0f };       // -24.0 to +12.0 dB (0.0 center)
+    std::atomic<float> inputMeterLevel { 0.0f };    // 0.0 to 1.0
+    std::atomic<float> outputMeterLevel { 0.0f };   // 0.0 to 1.0
 
     juce::String currentPresetName { "" };
     juce::File currentPresetFile;

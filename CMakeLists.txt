@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.22)
-project(KINETIK VERSION 1.2.10)
+project(KINETIK VERSION 1.3.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(NOT DEFINED KINETIK_VERSION_STR)
-    set(KINETIK_VERSION_STR "v1.2.10")
+    set(KINETIK_VERSION_STR "v1.3.0")
 endif()
 
 include(FetchContent)
