@@ -6,14 +6,29 @@
 #include <vector>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <map>
 #include <set>
 
 #ifndef KINETIK_AUTO_VERSION_STR
-#define KINETIK_AUTO_VERSION_STR "v1.3.4"
+#define KINETIK_AUTO_VERSION_STR "v1.3.5"
 #endif
+
+struct KinetikThemePalette
+{
+    const char* name;
+    juce::Colour bg;
+    juce::Colour panel;
+    juce::Colour surface;
+    juce::Colour grid;
+    juce::Colour border;
+    juce::Colour text;
+    juce::Colour mutedText;
+    juce::Colour accent;
+    bool isLight;
+};
 
 struct FastSVF
 {
@@ -27,9 +42,9 @@ struct FastSVF
 
     void setParams (float cutoffHz, float q, double sampleRate)
     {
-        float fc = juce::jlimit (30.0f, static_cast<float> (sampleRate * 0.45), cutoffHz);
+        float fc = juce::jlimit (22.0f, static_cast<float> (sampleRate * 0.45), cutoffHz);
         g = std::tan (juce::MathConstants<float>::pi * fc / static_cast<float> (sampleRate));
-        k = 1.0f / juce::jlimit (0.3f, 8.0f, q);
+        k = 1.0f / juce::jlimit (0.35f, 8.0f, q);
         a1 = 1.0f / (1.0f + g * (g + k));
         a2 = g * a1;
         a3 = g * a2;
@@ -54,6 +69,16 @@ struct FastSVF
         ic2eq = 2.0f * v2 - ic2eq;
         return v0 - k * v1 - v2;
     }
+
+    inline float processBP (float v0)
+    {
+        float v3 = v0 - ic2eq;
+        float v1 = a1 * ic1eq + a2 * v3;
+        float v2 = ic2eq + a2 * ic1eq + a3 * v3;
+        ic1eq = 2.0f * v1 - ic1eq;
+        ic2eq = 2.0f * v2 - ic2eq;
+        return v1;
+    }
 };
 
 enum class SimpleFxType
@@ -62,6 +87,8 @@ enum class SimpleFxType
     EQ,
     Compressor,
     Saturation,
+    Transient,
+    Width,
     Delay,
     Reverb
 };
@@ -69,22 +96,38 @@ enum class SimpleFxType
 struct SimpleFxSlot
 {
     SimpleFxType type = SimpleFxType::Off;
-    bool enabled = true;
+    bool enabled = false;
     float p1 = 0.5f;
     float p2 = 0.5f;
     float p3 = 0.5f;
     float p4 = 0.5f;
     float p5 = 0.5f;
 
-    FastSVF fL, fR, midL, midR;
+    FastSVF hpL, hpR, lpL, lpR, midL, midR;
     float env = 0.0f;
+    float envSlow = 0.0f;
     float lastGrDb = 0.0f;
+    float lastInputLevel = 0.0f;
+    float chorusPhase = 0.0f;
+
     std::vector<float> bufL, bufR;
     int writePos = 0;
 
+    std::array<std::vector<float>, 4> combL, combR;
+    std::array<int, 4> combPosL {}, combPosR {};
+    std::array<float, 4> combDampL {}, combDampR {};
+    std::array<std::vector<float>, 2> apL, apR;
+    std::array<int, 2> apPosL {}, apPosR {};
+
+    static constexpr int grHistSize = 96;
+    std::array<float, grHistSize> grHistory {};
+    int grWriteIdx = 0;
+
+    void setDefaultsForType (SimpleFxType t);
     void prepare (double sr);
     void processStereo (float* L, float* R, int numSamples, double sr);
     static juce::String getTypeName (SimpleFxType t);
+    static juce::String getShortCardName (SimpleFxType t);
     static juce::String getParamLabel (SimpleFxType t, int idx);
 };
 
@@ -104,7 +147,7 @@ struct SampleLayer
 
 struct SampleGroup
 {
-    static constexpr int numFxSlots = 4;
+    static constexpr int numFxSlots = 7;
 
     juce::String name { "Group 1" };
     bool muted = false;
@@ -112,7 +155,10 @@ struct SampleGroup
     int keyswitchNote = -1;
     float volumeDb100 = 80.0f;
     float pan50 = 0.0f;
+    int silentSamples = 999999;
     std::array<SimpleFxSlot, numFxSlots> fxSlots;
+
+    SampleGroup();
 };
 
 struct SampleZone
@@ -124,7 +170,7 @@ struct SampleZone
     int rootKey = 60;
     int lowVel = 0;
     int highVel = 127;
-    juce::Colour colour { 0xffe6e9ef };
+    juce::Colour colour { 0xff1b4fd8 };
     int colourIndex = 0;
 
     float startNorm = 0.0f;
@@ -133,10 +179,12 @@ struct SampleZone
     float loopEndNorm = 0.85f;
     bool sampleLoop = false;
     bool autoLoopZeroCross = true;
-    float loopCrossfade = 0.04f;
+    float loopCrossfade = 0.08f;
     float fadeInNorm = 0.0f;
     float fadeOutNorm = 0.0f;
     bool reverse = false;
+    bool oneShot = false;
+    int chokeGroup = 0;
 
     float pitchSemi = 0.0f;
     float pan50 = 0.0f;
@@ -151,6 +199,7 @@ struct SampleZone
     std::vector<SampleLayer> layers;
     int selectedLayerIndex = 0;
     int rrPlayIndex = 0;
+    int lastPlayedLayerIdx = -1;
     bool realRREnabled = true;
 
     std::vector<RhythmEvent> seqEvents;
@@ -159,11 +208,25 @@ struct SampleZone
 struct ActiveVoice
 {
     bool active = false;
+    bool isPreview = false;
     int zoneIndex = -1;
     int layerIndex = 0;
     int midiNote = 60;
+    int chokeGroup = 0;
+    bool oneShot = false;
+    uint64_t ageOrder = 0;
+
     double currentPos = 0.0;
-    double pitchRatio = 1.0;
+    double baseSampleRateRatio = 1.0;
+    double currentSemi = 0.0;
+    double startSemi = 0.0;
+    double targetSemi = 0.0;
+    int glideTotalSamples = 0;
+    int glideElapsedSamples = 0;
+
+    int legatoDipTotal = 0;
+    int legatoDipElapsed = 0;
+
     bool playingReverse = false;
     float gainL = 1.0f;
     float gainR = 1.0f;
@@ -171,9 +234,14 @@ struct ActiveVoice
     float envVal = 0.0f;
     int envStage = 0;
     float attackInc = 0.01f;
-    float decayDec = 0.001f;
+    float decayCoeff = 0.999f;
     float sustainLvl = 0.85f;
-    float releaseDec = 0.001f;
+    float releaseCoeff = 0.999f;
+    float fastKillDec = 0.006f;
+
+    float baseCutoffHz = 20000.0f;
+    float baseResQ = 0.707f;
+    bool useFilter = false;
     FastSVF filterL;
     FastSVF filterR;
 };
@@ -193,6 +261,9 @@ public:
     static juce::Colour getPaletteColour (int idx);
     static juce::String getPaletteColourName (int idx);
 
+    static constexpr int numUiThemes = 8;
+    static KinetikThemePalette getThemePalette (int themeIdx);
+
     RythmeAudioProcessor();
     ~RythmeAudioProcessor() override;
 
@@ -210,7 +281,7 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 2.0; }
+    double getTailLengthSeconds() const override { return 2.5; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -228,20 +299,28 @@ public:
     int createEmptyZone (int key);
     bool addSampleToZone (int zoneIndex, const juce::File& file);
     bool loadSampleIntoNewZone (const juce::File& file, int lowKey, int highKey, int rootKey, int lowVel = 0, int highVel = 127);
+    bool deleteLayerFromZone (int zoneIndex, int layerIndex);
     void deleteZone (int index);
     void deleteZones (std::vector<int> indices);
     void normalizeSelectedSample();
     void resetSelectedZoneDefaults();
     void clearSelectedZoneRhythm();
     float snapNormToZeroCrossing (int zoneIndex, float rawNorm) const;
+    void recomputeSampleRamMb();
 
     static constexpr int scopeHistorySize = 360;
     void copyScopeHistory (std::array<float, scopeHistorySize>& dest, bool& isSounding) const;
+
+    static constexpr int fftSize = 512;
+    void copyRecentAudioForFft (std::array<float, fftSize>& dest, bool& isSounding) const;
 
     void triggerNote (int midiNote, float velocity);
     void releaseNote (int midiNote);
     void uiNoteOn (int midiNote, float velocity);
     void uiNoteOff (int midiNote);
+    void toggleZonePreview (int zoneIdx);
+    bool isZonePreviewActive() const { return previewActive.load(); }
+    void stopAllVoicesSmooth();
 
     bool savePresetMn6x (const juce::File& file);
     bool loadPresetMn6x (const juce::File& file);
@@ -283,16 +362,16 @@ public:
     juce::String brandLetters { "N6" };
     juce::String pluginTitleText { "KINETIK" };
     juce::String libraryNameText { "" };
+    int uiThemeId = 0;
     int logoStyleId = 1;
-    int logoColourIdx = 11;
+    int logoColourIdx = 0;
     int knobStyleId = 1;
-    int knobColourIdx = 11;
+    int knobColourIdx = 0;
     int faderStyleId = 1;
-    int faderColourIdx = 11;
+    int faderColourIdx = 0;
     int switchStyleId = 1;
-    int switchColourIdx = 11;
+    int switchColourIdx = 0;
 
-    // Persistent UI Scale & Customize Layout State
     float uiScale = 1.0f;
     int customizeGridStep = 20;
     std::map<juce::String, juce::Rectangle<int>> mainCustomBounds;
@@ -308,30 +387,48 @@ public:
     std::array<std::atomic<uint8_t>, 128> activeNotesUi {};
     std::atomic<uint32_t> stateRevision { 0 };
     std::atomic<bool> internalPlaying { false };
-    std::atomic<float> pitchWheelNorm { 0.0f };     // -1.0 to +1.0
-    std::atomic<float> modWheelNorm { 0.0f };       // 0.0 to 1.0
-    std::atomic<float> masterGainDb { 0.0f };       // -24.0 to +12.0 dB (0.0 center)
-    std::atomic<float> outputMeterL { 0.0f };       // 0.0 to 1.0 (Left output)
-    std::atomic<float> outputMeterR { 0.0f };       // 0.0 to 1.0 (Right output)
+    std::atomic<bool> previewActive { false };
+    std::atomic<float> selectedZonePlayheadNorm { -1.0f };
+
+    std::atomic<float> pitchWheelNorm { 0.0f };
+    std::atomic<float> modWheelNorm { 0.0f };
+    std::atomic<float> expressionNorm { 1.0f };
+    std::atomic<float> masterGainDb { 0.0f };
+    std::atomic<float> outputMeterL { 0.0f };
+    std::atomic<float> outputMeterR { 0.0f };
+    std::atomic<float> cpuUsagePercent { 0.0f };
+    std::atomic<float> sampleRamMb { 0.0f };
 
     juce::String currentPresetName { "" };
     juce::File currentPresetFile;
 
 private:
     juce::AudioFormatManager formatManager;
-    static constexpr int maxVoices = 32;
+    static constexpr int maxVoices = 64;
     std::array<ActiveVoice, maxVoices> voices;
     double currentSampleRate = 44100.0;
     juce::Random rng;
+    uint64_t voiceAgeCounter = 1;
 
     juce::AudioBuffer<float> groupScratchBuf;
     uint64_t rrSeedCounter = 1;
     float lastRrPitch = 0.0f;
+    double vibratoPhase = 0.0;
+
+    bool sustainPedalDown = false;
+    std::array<bool, 128> sustainedNotes {};
+    struct HeldNoteEntry { int note = 60; float vel = 0.8f; };
+    std::vector<HeldNoteEntry> legatoNoteStack;
+    int previewNote = -1;
 
     mutable juce::SpinLock scopeLock;
     std::array<float, scopeHistorySize> scopeRing {};
     int scopeWriteIdx = 0;
     int silentSamplesHold = 999999;
+
+    static constexpr int fftRingSize = 1024;
+    std::array<float, fftRingSize> fftRing {};
+    std::atomic<int> fftWriteIdx { 0 };
 
     std::array<float, 128> heldNotesVel {};
     double seqBarPhase = 0.0;
@@ -345,7 +442,10 @@ private:
     void saveLibraryRegistry();
     void loadLibraryRegistry();
 
-    void startVoice (int zoneIdx, int midiNote, float velocity);
+    void startVoice (int zoneIdx, int midiNote, float velocity, bool isPreviewVoice = false);
+    void glideExistingLegatoVoices (int newMidiNote, float velocity);
+    void triggerNoteInternal (int midiNote, float velocity, bool isPreviewVoice = false);
+    void releaseNoteInternal (int midiNote);
     bool isGroupActiveForNote (int groupIdx) const;
     bool hasAnySoloedGroup() const;
     std::vector<RhythmEvent> createDefaultEvents() const;
