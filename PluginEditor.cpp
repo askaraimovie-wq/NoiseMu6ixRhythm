@@ -744,7 +744,6 @@ LeftKinetikScaleButton::LeftKinetikScaleButton (RythmeAudioProcessor& p, std::fu
 {
     theme = RythmeAudioProcessor::getThemePalette (0);
     setMouseCursor (juce::MouseCursor::PointingHandCursor);
-    setTooltip ("Click to change UI Size (50% - 150%)");
 }
 
 void LeftKinetikScaleButton::paint (juce::Graphics& g)
@@ -3155,7 +3154,6 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     };
 
     editContent.addAndMakeVisible (glideBox);
-    glideBox.setTooltip ("Legato / Portamento Glide Time (ms)");
     glideBox.setValue (audioProcessor.apvts.getRawParameterValue ("glideMs")->load(), false);
     glideBox.onValueChanged = [this] (double v)
     {
