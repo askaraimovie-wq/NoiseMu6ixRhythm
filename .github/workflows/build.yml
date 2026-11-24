@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version_tag:
-        description: "Optional version override (leave empty for sequential auto v1.2.2 -> v1.2.3 -> ...)"
+        description: "Optional version override (leave empty for sequential auto v1.2.3 -> v1.2.4 -> ...)"
         required: false
         default: ""
 
@@ -40,10 +40,10 @@ jobs:
                 $pat = [int]$Matches[3] + 1
                 $verStr = "v$maj.$min.$pat"
               } else {
-                $verStr = "v1.2.2"
+                $verStr = "v1.2.3"
               }
             } else {
-              $verStr = "v1.2.2"
+              $verStr = "v1.2.3"
             }
             Set-Content -Path $verFile -Value $verStr -NoNewline
             git config user.name "github-actions[bot]"
@@ -60,7 +60,7 @@ jobs:
       - name: Build VST3 Plugin
         run: cmake --build build --config Release --target RYTHME_VST3 --parallel
 
-      - name: Rename VST3 Bundle With Version Name
+      - name: Verify Versioned VST3 Output
         shell: pwsh
         run: |
           $ver = "${{ steps.ver.outputs.ver_str }}"
@@ -68,9 +68,11 @@ jobs:
           $src = Get-ChildItem -Path $vstDir -Filter "*.vst3" | Select-Object -First 1
           if ($null -ne $src) {
             $targetName = "RYTHME $ver.vst3"
-            $dst = Join-Path $vstDir $targetName
-            if (Test-Path $dst) { Remove-Item -Recurse -Force $dst }
-            Rename-Item -Path $src.FullName -NewName $targetName
+            if ($src.Name -ne $targetName) {
+              $dst = Join-Path $vstDir $targetName
+              if (Test-Path $dst) { Remove-Item -Recurse -Force $dst }
+              Rename-Item -Path $src.FullName -NewName $targetName
+            }
           }
 
       - name: Upload VST3 Artifact
