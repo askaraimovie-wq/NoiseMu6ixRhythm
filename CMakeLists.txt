@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.22)
-project(RYTHME VERSION 1.2.2)
+project(RYTHME VERSION 1.2.3)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(NOT DEFINED RYTHME_VERSION_STR)
-    set(RYTHME_VERSION_STR "v1.2.2")
+    set(RYTHME_VERSION_STR "v1.2.3")
 endif()
 
 include(FetchContent)
@@ -28,7 +28,7 @@ juce_add_plugin(RYTHME
     PLUGIN_MANUFACTURER_CODE Nm6x
     PLUGIN_CODE Ryth
     FORMATS VST3
-    PRODUCT_NAME "RYTHME"
+    PRODUCT_NAME "RYTHME ${RYTHME_VERSION_STR}"
 )
 
 target_sources(RYTHME

@@ -10,7 +10,7 @@
 #include <string>
 
 #ifndef RYTHME_AUTO_VERSION_STR
-#define RYTHME_AUTO_VERSION_STR "v1.2.2"
+#define RYTHME_AUTO_VERSION_STR "v1.2.3"
 #endif
 
 struct FastSVF
@@ -64,6 +64,7 @@ enum class SimpleFxType
     Reverb
 };
 
+// FabFilter-style full parameter FX slot (5 controls + ON/Bypass)
 struct SimpleFxSlot
 {
     SimpleFxType type = SimpleFxType::Off;
@@ -71,9 +72,12 @@ struct SimpleFxSlot
     float p1 = 0.5f;
     float p2 = 0.5f;
     float p3 = 0.5f;
+    float p4 = 0.5f;
+    float p5 = 0.5f;
 
-    FastSVF fL, fR;
+    FastSVF fL, fR, midL, midR;
     float env = 0.0f;
+    float lastGrDb = 0.0f;
     std::vector<float> bufL, bufR;
     int writePos = 0;
 
@@ -105,8 +109,8 @@ struct SampleGroup
     bool muted = false;
     bool soloed = false;
     int keyswitchNote = -1;
-    float volume = 1.0f;
-    float pan = 0.0f;
+    float volumeDb100 = 80.0f; // 0..100 dB scale (default 80)
+    float pan50 = 0.0f;        // -50..+50 (default 0)
     std::array<SimpleFxSlot, numFxSlots> fxSlots;
 };
 
@@ -133,14 +137,14 @@ struct SampleZone
     float fadeOutNorm = 0.0f;
     bool reverse = false;
 
-    float pitchSemi = 0.0f;
-    float pan = 0.0f;
-    float volume = 1.0f;
-    float attackSec = 0.005f;
-    float decaySec = 0.30f;
-    float sustainLvl = 0.85f;
-    float releaseSec = 0.25f;
-    float cutoffHz = 18000.0f;
+    float pitchSemi = 0.0f;     // -24..+24 (default 0)
+    float pan50 = 0.0f;         // -50..+50 (default 0)
+    float volumeDb100 = 80.0f;  // 0..100 dB scale (default 80)
+    float attackMs = 0.10f;     // ms (default 0.10 ms)
+    float decayMs = 300.0f;     // ms (default 300 ms)
+    float sustainPct = 85.0f;   // 0..100% (default 85)
+    float releaseMs = 250.0f;   // ms (default 250 ms)
+    float cutoffHz = 20000.0f;
     float resQ = 0.707f;
 
     std::vector<SampleLayer> layers;
@@ -181,27 +185,13 @@ struct LibraryCategoryEntry
     std::vector<juce::File> items;
 };
 
-// Patcher / Routing Node & Wire
-struct PatchNode
+struct WidgetLayoutRect
 {
-    juce::String id;
-    juce::String title;
-    juce::String category; // "SOURCE", "SWITCH", "LEVEL", "FX", "CUSTOM"
-    float x = 20.0f;
-    float y = 20.0f;
-    float w = 132.0f;
-    float h = 54.0f;
-    bool active = true;
-    float level = 0.85f;
-    int styleId = 1; // 1..10
-};
-
-struct PatchWire
-{
-    juce::String fromNodeId;
-    juce::String toNodeId;
-    float gain = 1.0f;
-    bool enabled = true;
+    int x = 0;
+    int y = 0;
+    int w = 100;
+    int h = 40;
+    bool customized = false;
 };
 
 class RythmeAudioProcessor : public juce::AudioProcessor
@@ -252,7 +242,10 @@ public:
     void resetSelectedZoneDefaults();
     void clearSelectedZoneRhythm();
     float snapNormToZeroCrossing (int zoneIndex, float rawNorm) const;
-    float getSelectedZonePlayheadNorm() const;
+
+    // Live output scrolling waveform buffer (Right -> Left scrolling digital display)
+    static constexpr int scopeHistorySize = 360;
+    void copyScopeHistory (std::array<float, scopeHistorySize>& dest, bool& isSounding) const;
 
     void triggerNote (int midiNote, float velocity);
     void releaseNote (int midiNote);
@@ -262,7 +255,6 @@ public:
     bool savePresetMn6x (const juce::File& file);
     bool loadPresetMn6x (const juce::File& file);
 
-    // Persistent Library Registry
     void addLibraryFolderPersistent (const juce::File& folder);
     void sortLibraryPersistent();
     void removeLibraryEntryPersistent (int catIdx);
@@ -270,12 +262,7 @@ public:
     void setLoadedItemInPanel (const juce::String& displayName, const juce::File& file, int keyHint = -1);
     void clearLoadedItemPanel();
 
-    // Patcher Routing helpers
-    void initDefaultPatchGraph();
-    void addCustomPatchNode (const juce::String& title, const juce::String& category);
-    void addPatchWire (const juce::String& fromId, const juce::String& toId);
-    void togglePatchWire (size_t idx);
-    void removePatchWire (size_t idx);
+    static float vol100ToLinearGain (float vol100);
 
     int getGridDivisions() const;
     double getCurrentSampleRate() const { return currentSampleRate; }
@@ -296,17 +283,14 @@ public:
     juce::File loadedItemFile;
     int loadedItemKey = -1;
 
-    // Customizable Brand / Logo / Title & Global Styles (1..10)
+    // Branding / Logo / Title & Global Styles
     juce::String brandLetters { "N6" };
     juce::String pluginTitleText { "RYTHME" };
-    int logoStyleId = 1;   // 1..4
-    int knobStyleId = 1;   // 1..10 (shared across all knobs)
-    int faderStyleId = 1;  // 1..10 (shared across all faders)
-    int switchStyleId = 1; // 1..10 (shared across all switches)
-
-    // Patcher graph
-    std::vector<PatchNode> patchNodes;
-    std::vector<PatchWire> patchWires;
+    int logoStyleId = 1;    // 1..4
+    int logoColourIdx = 0;  // 0..11
+    int knobStyleId = 1;    // 1..10
+    int faderStyleId = 1;   // 1..10
+    int switchStyleId = 1;  // 1..10
 
     std::atomic<bool> selectGroupOnly { true };
     std::atomic<bool> seqBypass { false };
@@ -329,6 +313,12 @@ private:
     juce::AudioBuffer<float> groupScratchBuf;
     uint64_t rrSeedCounter = 1;
     float lastRrPitch = 0.0f;
+
+    // Live output scope ring buffer
+    mutable juce::SpinLock scopeLock;
+    std::array<float, scopeHistorySize> scopeRing {};
+    int scopeWriteIdx = 0;
+    int silentSamplesHold = 999999;
 
     std::array<float, 128> heldNotesVel {};
     double seqBarPhase = 0.0;

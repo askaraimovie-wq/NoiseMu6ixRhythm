@@ -6,10 +6,12 @@
 void SimpleFxSlot::prepare (double sr)
 {
     fL.reset(); fR.reset();
+    midL.reset(); midR.reset();
     env = 0.0f;
+    lastGrDb = 0.0f;
     if (type == SimpleFxType::Delay || type == SimpleFxType::Reverb)
     {
-        int len = static_cast<int> (sr * 1.2) + 64;
+        int len = static_cast<int> (sr * 1.5) + 64;
         if (static_cast<int> (bufL.size()) < len)
         {
             bufL.assign (static_cast<size_t> (len), 0.0f);
@@ -24,11 +26,11 @@ juce::String SimpleFxSlot::getTypeName (SimpleFxType t)
     switch (t)
     {
         case SimpleFxType::Off:        return "FX Off";
-        case SimpleFxType::EQ:         return "EQ";
-        case SimpleFxType::Compressor: return "Comp";
-        case SimpleFxType::Saturation: return "Sat";
-        case SimpleFxType::Delay:      return "Delay";
-        case SimpleFxType::Reverb:     return "Reverb";
+        case SimpleFxType::EQ:         return "Pro-EQ";
+        case SimpleFxType::Compressor: return "Pro-Comp";
+        case SimpleFxType::Saturation: return "Saturn-Sat";
+        case SimpleFxType::Delay:      return "Timeless-Dly";
+        case SimpleFxType::Reverb:     return "Pro-Rev";
         default:                       return "FX Off";
     }
 }
@@ -37,12 +39,18 @@ juce::String SimpleFxSlot::getParamLabel (SimpleFxType t, int idx)
 {
     switch (t)
     {
-        case SimpleFxType::EQ:         return idx == 0 ? "Low"    : (idx == 1 ? "High"   : "Gain");
-        case SimpleFxType::Compressor: return idx == 0 ? "Thresh" : (idx == 1 ? "Ratio"  : "Gain");
-        case SimpleFxType::Saturation: return idx == 0 ? "Drive"  : (idx == 1 ? "Tone"   : "Mix");
-        case SimpleFxType::Delay:      return idx == 0 ? "Time"   : (idx == 1 ? "Feedbk" : "Mix");
-        case SimpleFxType::Reverb:     return idx == 0 ? "Size"   : (idx == 1 ? "Damp"   : "Mix");
-        default:                       return "P" + juce::String (idx + 1);
+        case SimpleFxType::EQ:
+            return idx == 0 ? "Low Cut" : (idx == 1 ? "Mid Freq" : (idx == 2 ? "Mid Gain" : (idx == 3 ? "High Cut" : "Out Gain")));
+        case SimpleFxType::Compressor:
+            return idx == 0 ? "Thresh" : (idx == 1 ? "Ratio" : (idx == 2 ? "Attack" : (idx == 3 ? "Release" : "Makeup")));
+        case SimpleFxType::Saturation:
+            return idx == 0 ? "Drive" : (idx == 1 ? "Tone" : (idx == 2 ? "Dynamics" : (idx == 3 ? "Level" : "Mix")));
+        case SimpleFxType::Delay:
+            return idx == 0 ? "Time" : (idx == 1 ? "Feedback" : (idx == 2 ? "LP Cut" : (idx == 3 ? "Width" : "Mix")));
+        case SimpleFxType::Reverb:
+            return idx == 0 ? "Space" : (idx == 1 ? "Decay" : (idx == 2 ? "Damping" : (idx == 3 ? "PreDelay" : "Mix")));
+        default:
+            return "P" + juce::String (idx + 1);
     }
 }
 
@@ -53,46 +61,63 @@ void SimpleFxSlot::processStereo (float* L, float* R, int numSamples, double sr)
 
     if (type == SimpleFxType::EQ)
     {
-        float lowHz = 40.0f + p1 * 560.0f;
-        float highHz = 1200.0f + p2 * 18000.0f;
-        float gain = 0.5f + p3 * 1.5f;
-        fL.setParams (highHz, 0.707f, sr);
-        fR.setParams (highHz, 0.707f, sr);
+        float lowCutHz  = 20.0f + p1 * 500.0f;
+        float midFreqHz = 250.0f + p2 * 5500.0f;
+        float midGain   = 0.4f + p3 * 1.6f;
+        float highCutHz = 1800.0f + p4 * 18200.0f;
+        float outGain   = 0.5f + p5 * 1.5f;
+
+        fL.setParams (highCutHz, 0.707f, sr);
+        fR.setParams (highCutHz, 0.707f, sr);
+        midL.setParams (midFreqHz, 1.2f, sr);
+        midR.setParams (midFreqHz, 1.2f, sr);
+        float lowAtt = juce::jlimit (0.0f, 0.45f, (lowCutHz - 20.0f) / 1100.0f);
+
         for (int i = 0; i < numSamples; ++i)
         {
-            float hpL = fL.processLP (L[i]) * gain;
-            float hpR = fR.processLP (R[i]) * gain;
-            float lowAtt = juce::jlimit (0.0f, 0.35f, (lowHz - 40.0f) / 1600.0f);
-            L[i] = hpL * (1.0f - lowAtt);
-            R[i] = hpR * (1.0f - lowAtt);
+            float xL = fL.processLP (L[i]) * (1.0f - lowAtt);
+            float xR = fR.processLP (R[i]) * (1.0f - lowAtt);
+            float mL = midL.processLP (xL);
+            float mR = midR.processLP (xR);
+            L[i] = (xL + mL * (midGain - 1.0f) * 0.45f) * outGain;
+            R[i] = (xR + mR * (midGain - 1.0f) * 0.45f) * outGain;
         }
     }
     else if (type == SimpleFxType::Compressor)
     {
-        float thresh = 0.08f + (1.0f - p1) * 0.82f;
-        float ratio = 1.0f + p2 * 8.0f;
-        float gain = 0.6f + p3 * 1.4f;
+        float thresh  = 0.06f + (1.0f - p1) * 0.84f;
+        float ratio   = 1.0f + p2 * 11.0f;
+        float atkCoef = 0.005f + (1.0f - p3) * 0.14f;
+        float relCoef = 0.0004f + (1.0f - p4) * 0.015f;
+        float makeup  = 0.5f + p5 * 1.6f;
+
+        float minGr = 1.0f;
         for (int i = 0; i < numSamples; ++i)
         {
             float pk = std::max (std::abs (L[i]), std::abs (R[i]));
-            env += (pk > env ? 0.08f : 0.002f) * (pk - env);
+            env += (pk > env ? atkCoef : relCoef) * (pk - env);
             float gr = (env > thresh && env > 1e-5f) ? std::pow (env / thresh, (1.0f / ratio) - 1.0f) : 1.0f;
-            L[i] *= gr * gain;
-            R[i] *= gr * gain;
+            minGr = std::min (minGr, gr);
+            L[i] *= gr * makeup;
+            R[i] *= gr * makeup;
         }
+        lastGrDb = juce::Decibels::gainToDecibels (minGr, -24.0f);
     }
     else if (type == SimpleFxType::Saturation)
     {
-        float drive = 1.0f + p1 * 8.0f;
-        float norm = 1.0f / std::tanh (drive);
-        float cutHz = 1500.0f + p2 * 16500.0f;
-        float mix = p3;
+        // p1 = Drive (default 1.0 -> 100% requested), p2 = Tone, p3 = Dynamics, p4 = Level, p5 = Mix
+        float drive = 1.0f + p1 * 7.5f;
+        float norm  = 1.0f / std::tanh (drive);
+        float cutHz = 1600.0f + p2 * 18400.0f;
+        float level = 0.5f + p4 * 1.0f;
+        float mix   = p5;
+
         fL.setParams (cutHz, 0.707f, sr);
         fR.setParams (cutHz, 0.707f, sr);
         for (int i = 0; i < numSamples; ++i)
         {
-            float sL = fL.processLP (std::tanh (L[i] * drive) * norm);
-            float sR = fR.processLP (std::tanh (R[i] * drive) * norm);
+            float sL = fL.processLP (std::tanh (L[i] * drive) * norm) * level;
+            float sR = fR.processLP (std::tanh (R[i] * drive) * norm) * level;
             L[i] = L[i] * (1.0f - mix) + sL * mix;
             R[i] = R[i] * (1.0f - mix) + sR * mix;
         }
@@ -104,18 +129,23 @@ void SimpleFxSlot::processStereo (float* L, float* R, int numSamples, double sr)
         if (bufLen < 64) return;
 
         int dL = (type == SimpleFxType::Delay)
-            ? juce::jlimit (64, bufLen - 2, static_cast<int> ((0.05f + p1 * 0.65f) * sr))
-            : juce::jlimit (64, bufLen - 2, static_cast<int> ((0.025f + p1 * 0.085f) * sr));
-        int dR = juce::jlimit (64, bufLen - 2, static_cast<int> (dL * 1.15f));
-        float fb = (type == SimpleFxType::Delay) ? (p2 * 0.75f) : (0.42f + p2 * 0.42f);
-        float mix = p3;
+            ? juce::jlimit (64, bufLen - 2, static_cast<int> ((0.04f + p1 * 0.75f) * sr))
+            : juce::jlimit (64, bufLen - 2, static_cast<int> ((0.02f + p1 * 0.09f + p4 * 0.05f) * sr));
+        float widthScale = (type == SimpleFxType::Delay) ? (1.0f + p4 * 0.25f) : 1.18f;
+        int dR = juce::jlimit (64, bufLen - 2, static_cast<int> (dL * widthScale));
+        float fb = (type == SimpleFxType::Delay) ? (p2 * 0.78f) : (0.38f + p2 * 0.48f);
+        float dampHz = 1200.0f + (1.0f - p3) * 16000.0f;
+        float mix = p5;
+
+        fL.setParams (dampHz, 0.707f, sr);
+        fR.setParams (dampHz, 0.707f, sr);
 
         for (int i = 0; i < numSamples; ++i)
         {
             int rL = (writePos - dL + bufLen) % bufLen;
             int rR = (writePos - dR + bufLen) % bufLen;
-            float tL = bufL[static_cast<size_t> (rL)];
-            float tR = bufR[static_cast<size_t> (rR)];
+            float tL = fL.processLP (bufL[static_cast<size_t> (rL)]);
+            float tR = fR.processLP (bufR[static_cast<size_t> (rR)]);
             bufL[static_cast<size_t> (writePos)] = L[i] + tR * fb;
             bufR[static_cast<size_t> (writePos)] = R[i] + tL * fb;
             writePos = (writePos + 1) % bufLen;
@@ -128,7 +158,7 @@ void SimpleFxSlot::processStereo (float* L, float* R, int numSamples, double sr)
 juce::Colour RythmeAudioProcessor::getPaletteColour (int idx)
 {
     static const juce::Colour palette[numPaletteColours] = {
-        juce::Colour (0xff4ca3ff), // 0: Blue (Default)
+        juce::Colour (0xff4ca3ff), // 0: Blue
         juce::Colour (0xffe04f8a), // 1: Pink
         juce::Colour (0xffee5253), // 2: Red
         juce::Colour (0xffee7b38), // 3: Orange
@@ -139,7 +169,7 @@ juce::Colour RythmeAudioProcessor::getPaletteColour (int idx)
         juce::Colour (0xff38c4d9), // 8: Cyan
         juce::Colour (0xffa66cff), // 9: Purple
         juce::Colour (0xffc56cf0), // 10: Magenta
-        juce::Colour (0xff9aa8bf)  // 11: Silver
+        juce::Colour (0xffd0d6e0)  // 11: Vintage White/Silver
     };
     return palette[juce::jlimit (0, numPaletteColours - 1, idx)];
 }
@@ -148,9 +178,17 @@ juce::String RythmeAudioProcessor::getPaletteColourName (int idx)
 {
     static const char* names[numPaletteColours] = {
         "Blue (Default)", "Pink", "Red", "Orange", "Amber", "Gold",
-        "Emerald", "Green", "Cyan", "Purple", "Magenta", "Silver"
+        "Emerald", "Green", "Cyan", "Purple", "Magenta", "Vintage White"
     };
     return names[juce::jlimit (0, numPaletteColours - 1, idx)];
+}
+
+float RythmeAudioProcessor::vol100ToLinearGain (float vol100)
+{
+    float v = juce::jlimit (0.0f, 100.0f, vol100);
+    if (v <= 0.01f) return 0.0f;
+    // 80 -> 1.0f unity gain, 100 -> ~+3.5dB (1.5f), 0 -> silence
+    return std::pow (v / 80.0f, 1.35f);
 }
 
 RythmeAudioProcessor::RythmeAudioProcessor()
@@ -159,57 +197,24 @@ RythmeAudioProcessor::RythmeAudioProcessor()
 {
     formatManager.registerBasicFormats();
     heldNotesVel.fill (0.0f);
+    scopeRing.fill (0.0f);
     groups.emplace_back();
     selectedGroupIndex = 0;
     loadLibraryRegistry();
-    initDefaultPatchGraph();
 }
 
 RythmeAudioProcessor::~RythmeAudioProcessor() = default;
 
-void RythmeAudioProcessor::initDefaultPatchGraph()
+void RythmeAudioProcessor::copyScopeHistory (std::array<float, scopeHistorySize>& dest, bool& isSounding) const
 {
-    patchNodes.clear();
-    patchWires.clear();
-
-    patchNodes.push_back ({ "n_seq",  "RHYTHM SEQ",  "SOURCE", 24.0f,  28.0f,  136.0f, 52.0f, true, 1.0f, 1 });
-    patchNodes.push_back ({ "n_sw1",  "LOOP SWITCH", "SWITCH", 200.0f, 28.0f,  136.0f, 52.0f, true, 1.0f, 2 });
-    patchNodes.push_back ({ "n_lvl1", "GROUP LEVEL", "LEVEL",  376.0f, 28.0f,  136.0f, 52.0f, true, 0.85f, 3 });
-    patchNodes.push_back ({ "n_fx",   "FX BUS",      "FX",     552.0f, 28.0f,  136.0f, 52.0f, true, 1.0f, 4 });
-
-    patchWires.push_back ({ "n_seq",  "n_sw1",  1.0f, true });
-    patchWires.push_back ({ "n_sw1",  "n_lvl1", 0.9f, true });
-    patchWires.push_back ({ "n_lvl1", "n_fx",   1.0f, true });
-}
-
-void RythmeAudioProcessor::addCustomPatchNode (const juce::String& title, const juce::String& category)
-{
-    int idx = static_cast<int> (patchNodes.size());
-    float nx = 24.0f + (idx % 4) * 168.0f;
-    float ny = 108.0f + (idx / 4) * 76.0f;
-    juce::String id = "n_custom_" + juce::String (idx + 1);
-    patchNodes.push_back ({ id, title.isEmpty() ? ("Node " + juce::String (idx + 1)) : title,
-                            category, nx, ny, 136.0f, 52.0f, true, 0.8f, 5 });
-}
-
-void RythmeAudioProcessor::addPatchWire (const juce::String& fromId, const juce::String& toId)
-{
-    if (fromId.isEmpty() || toId.isEmpty() || fromId == toId) return;
-    for (const auto& w : patchWires)
-        if (w.fromNodeId == fromId && w.toNodeId == toId) return;
-    patchWires.push_back ({ fromId, toId, 1.0f, true });
-}
-
-void RythmeAudioProcessor::togglePatchWire (size_t idx)
-{
-    if (idx < patchWires.size())
-        patchWires[idx].enabled = ! patchWires[idx].enabled;
-}
-
-void RythmeAudioProcessor::removePatchWire (size_t idx)
-{
-    if (idx < patchWires.size())
-        patchWires.erase (patchWires.begin() + static_cast<long> (idx));
+    const juce::SpinLock::ScopedLockType sl (scopeLock);
+    int rIdx = scopeWriteIdx;
+    for (int i = 0; i < scopeHistorySize; ++i)
+    {
+        dest[static_cast<size_t> (i)] = scopeRing[static_cast<size_t> (rIdx)];
+        rIdx = (rIdx + 1) % scopeHistorySize;
+    }
+    isSounding = (silentSamplesHold < static_cast<int> (currentSampleRate * 0.14));
 }
 
 juce::File RythmeAudioProcessor::getRegistryFile() const
@@ -378,6 +383,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout RythmeAudioProcessor::create
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
     params.push_back (std::make_unique<juce::AudioParameterBool> ("frr", "FRR (Fake Round Robin)", false));
+    params.push_back (std::make_unique<juce::AudioParameterBool> ("fvl", "FVL (Fake Velocity Layer Cut-Only)", false));
     params.push_back (std::make_unique<juce::AudioParameterBool> ("pitchTrack", "Pitch Track (Keys)", false));
     params.push_back (std::make_unique<juce::AudioParameterBool> ("seqLoop", "Rhythm Loop", false));
     params.push_back (std::make_unique<juce::AudioParameterBool> ("hostSync", "DAW Sync", true));
@@ -595,13 +601,13 @@ void RythmeAudioProcessor::resetSelectedZoneDefaults()
     z.fadeInNorm = 0.0f;
     z.fadeOutNorm = 0.0f;
     z.pitchSemi = 0.0f;
-    z.pan = 0.0f;
-    z.volume = 1.0f;
-    z.attackSec = 0.005f;
-    z.decaySec = 0.30f;
-    z.sustainLvl = 0.85f;
-    z.releaseSec = 0.25f;
-    z.cutoffHz = 18000.0f;
+    z.pan50 = 0.0f;
+    z.volumeDb100 = 80.0f;
+    z.attackMs = 0.10f;
+    z.decayMs = 300.0f;
+    z.sustainPct = 85.0f;
+    z.releaseMs = 250.0f;
+    z.cutoffHz = 20000.0f;
     z.resQ = 0.707f;
 }
 
@@ -638,28 +644,6 @@ float RythmeAudioProcessor::snapNormToZeroCrossing (int zoneIndex, float rawNorm
             return static_cast<float> (target - off) / static_cast<float> (total);
     }
     return rawNorm;
-}
-
-float RythmeAudioProcessor::getSelectedZonePlayheadNorm() const
-{
-    for (const auto& v : voices)
-    {
-        if (v.active && v.zoneIndex == selectedZoneIndex)
-        {
-            const juce::ScopedLock sl (zoneLock);
-            if (v.zoneIndex >= 0 && v.zoneIndex < static_cast<int> (zones.size()))
-            {
-                const auto& z = zones[static_cast<size_t> (v.zoneIndex)];
-                if (! z.layers.empty())
-                {
-                    int total = z.layers[static_cast<size_t> (juce::jlimit (0, static_cast<int> (z.layers.size()) - 1, v.layerIndex))].buffer.getNumSamples();
-                    if (total > 0)
-                        return juce::jlimit (0.0f, 1.0f, static_cast<float> (v.currentPos / total));
-                }
-            }
-        }
-    }
-    return -1.0f;
 }
 
 bool RythmeAudioProcessor::hasAnySoloedGroup() const
@@ -735,42 +719,61 @@ void RythmeAudioProcessor::startVoice (int zoneIdx, int midiNote, float velocity
     v.playingReverse = z.reverse;
 
     bool frrOn = (apvts.getRawParameterValue ("frr")->load() > 0.5f) && (z.layers.size() == 1);
+    bool fvlOn = apvts.getRawParameterValue ("fvl")->load() > 0.5f;
     bool pitchTrackOn = apvts.getRawParameterValue ("pitchTrack")->load() > 0.5f;
     float velRandAmt = apvts.getRawParameterValue ("velRand")->load();
 
     if (velRandAmt > 0.001f)
     {
-        float delta = (rng.nextFloat() * 2.0f - 1.0f) * 0.30f * velRandAmt;
+        float delta = (rng.nextFloat() * 2.0f - 1.0f) * 0.25f * velRandAmt;
         v.velocity = juce::jlimit (0.04f, 1.0f, v.velocity + delta);
     }
 
-    float rrPitchCents = 0.0f, rrStartOffsetSamples = 0.0f, rrFilterMult = 1.0f, rrGainMult = 1.0f, rrExtraAttackSec = 0.0f;
+    // Clean, transparent FRR: preserves full original body/punch with subtle organic micro-variations
+    float rrPitchCents = 0.0f;
+    float rrStartOffsetSamples = 0.0f;
+    float rrGainMult = 1.0f;
+    float rrExtraAttackMs = 0.0f;
     if (frrOn)
     {
         ++rrSeedCounter;
         double n = static_cast<double> (rrSeedCounter);
-        float u1 = static_cast<float> (std::fmod (n * 0.61803398875 + rng.nextFloat() * 0.13, 1.0));
-        float u3 = static_cast<float> (std::fmod (n * 0.56984029099 + rng.nextFloat() * 0.19, 1.0));
-        float u4 = static_cast<float> (std::fmod (n * 0.43015970900 + rng.nextFloat() * 0.11, 1.0));
-        float u5 = static_cast<float> (std::fmod (n * 0.32471795724 + rng.nextFloat() * 0.23, 1.0));
+        float u1 = static_cast<float> (std::fmod (n * 0.61803398875 + rng.nextFloat() * 0.07, 1.0));
+        float u2 = static_cast<float> (std::fmod (n * 0.56984029099 + rng.nextFloat() * 0.09, 1.0));
+        float u3 = static_cast<float> (std::fmod (n * 0.43015970900 + rng.nextFloat() * 0.06, 1.0));
 
-        rrPitchCents = (u1 * 2.0f - 1.0f) * 18.0f;
-        if (std::abs (rrPitchCents - lastRrPitch) < 4.5f) rrPitchCents = -rrPitchCents;
+        rrPitchCents = (u1 * 2.0f - 1.0f) * 5.5f; // subtle +/- 5.5 cents (no dullness)
+        if (std::abs (rrPitchCents - lastRrPitch) < 1.8f) rrPitchCents = -rrPitchCents;
         lastRrPitch = rrPitchCents;
 
-        rrStartOffsetSamples = u3 * static_cast<float> (currentSampleRate * 0.0042);
-        rrFilterMult = 0.68f + u4 * 0.50f;
-        rrGainMult = 0.88f + u5 * 0.24f;
-        rrExtraAttackSec = u3 * 0.0045f;
+        rrStartOffsetSamples = u2 * static_cast<float> (currentSampleRate * 0.0012); // max 1.2ms
+        rrGainMult = 0.96f + u3 * 0.04f; // 0.96..1.00 (never makes sample weak/dull)
+        rrExtraAttackMs = u2 * 0.8f;
     }
 
-    float gain = std::pow (v.velocity, 1.15f);
+    // Cut-Only FVL: user sample is 100% Max ceiling (vel = 1.0 -> full brightness, never boosted above original!)
+    // Lower velocities smoothly attenuate high shelf / low-pass cutoff below original brightness
+    float fvlCutHz = 20000.0f;
+    float fvlGainScale = 1.0f;
+    if (fvlOn)
+    {
+        float vNorm = juce::jlimit (0.0f, 1.0f, v.velocity);
+        // At vNorm = 1.0 (127), fvlCutHz = 20000 Hz (100% untouched original tone!)
+        // As vNorm decreases below 1.0, smoothly cuts high frequencies down to 1400 Hz
+        fvlCutHz = 1400.0f + std::pow (vNorm, 1.45f) * 18600.0f;
+        fvlGainScale = 0.45f + 0.55f * vNorm;
+    }
 
-    float totalAttackSec = std::max (0.0005f, z.attackSec + rrExtraAttackSec);
+    float gain = std::pow (v.velocity, 1.10f) * fvlGainScale;
+
+    float totalAttackSec = std::max (0.0001f, (z.attackMs + rrExtraAttackMs) * 0.001f);
+    float decaySec = std::max (0.001f, z.decayMs * 0.001f);
+    float releaseSec = std::max (0.001f, z.releaseMs * 0.001f);
+
     v.attackInc = 1.0f / std::max (1.0f, static_cast<float> (totalAttackSec * currentSampleRate));
-    v.decayDec = 1.0f / std::max (1.0f, static_cast<float> (z.decaySec * currentSampleRate));
-    v.sustainLvl = z.sustainLvl;
-    v.releaseDec = 1.0f / std::max (1.0f, static_cast<float> (z.releaseSec * currentSampleRate));
+    v.decayDec = 1.0f / std::max (1.0f, static_cast<float> (decaySec * currentSampleRate));
+    v.sustainLvl = juce::jlimit (0.0f, 1.0f, z.sustainPct * 0.01f);
+    v.releaseDec = 1.0f / std::max (1.0f, static_cast<float> (releaseSec * currentSampleRate));
 
     double noteSemiOffset = pitchTrackOn ? static_cast<double> (midiNote - z.rootKey) : 0.0;
     double semitones = noteSemiOffset + static_cast<double> (z.pitchSemi) + (rrPitchCents / 100.0);
@@ -781,15 +784,15 @@ void RythmeAudioProcessor::startVoice (int zoneIdx, int midiNote, float velocity
     v.currentPos = z.reverse ? static_cast<double> (std::max (startSamp, endSamp - 2))
                              : (static_cast<double> (startSamp) + rrStartOffsetSamples);
 
-    float finalPan = juce::jlimit (-1.0f, 1.0f, z.pan);
-    float panAngle = (finalPan + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
-    float finalGain = gain * rrGainMult * z.volume;
+    float panNorm = juce::jlimit (-1.0f, 1.0f, z.pan50 / 50.0f);
+    float panAngle = (panNorm + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
+    float finalGain = gain * rrGainMult * vol100ToLinearGain (z.volumeDb100);
     v.gainL = finalGain * std::cos (panAngle) * 1.41421356f;
     v.gainR = finalGain * std::sin (panAngle) * 1.41421356f;
 
     v.filterL.reset();
     v.filterR.reset();
-    float finalCut = juce::jlimit (80.0f, 20000.0f, z.cutoffHz * rrFilterMult);
+    float finalCut = juce::jlimit (80.0f, 20000.0f, std::min (z.cutoffHz, fvlCutHz));
     v.filterL.setParams (finalCut, z.resQ, currentSampleRate);
     v.filterR.setParams (finalCut, z.resQ, currentSampleRate);
 }
@@ -1075,7 +1078,6 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
                     float sL = srcL[posInt] + frac * (srcL[posInt + 1] - srcL[posInt]);
                     float sR = srcR[posInt] + frac * (srcR[posInt + 1] - srcR[posInt]);
 
-                    // Loop Crossfade near loop end to remove loop repeat click
                     if (z.sampleLoop && ! z.reverse && xfadeSamps > 6 && posInt >= lEndSample - xfadeSamps)
                     {
                         float alpha = static_cast<float> (posInt - (lEndSample - xfadeSamps)) / static_cast<float> (xfadeSamps);
@@ -1121,14 +1123,42 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
             for (auto& slot : grp.fxSlots)
                 slot.processStereo (gL, gR, numSamples, currentSampleRate);
 
-        float panAngle = (juce::jlimit (-1.0f, 1.0f, grp.pan) + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
-        float gGL = grp.volume * std::cos (panAngle) * 1.41421356f;
-        float gGR = grp.volume * std::sin (panAngle) * 1.41421356f;
+        float gPanNorm = juce::jlimit (-1.0f, 1.0f, grp.pan50 / 50.0f);
+        float panAngle = (gPanNorm + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
+        float gLin = vol100ToLinearGain (grp.volumeDb100);
+        float gGL = gLin * std::cos (panAngle) * 1.41421356f;
+        float gGR = gLin * std::sin (panAngle) * 1.41421356f;
 
         for (int i = 0; i < numSamples; ++i)
         {
             outL[i] += gL[i] * gGL;
             outR[i] += gR[i] * gGR;
+        }
+    }
+
+    // Feed live summed stereo output into Vintage Scrolling Digital Waveform Display
+    float blockPeak = 0.0f;
+    for (int i = 0; i < numSamples; ++i)
+        blockPeak = std::max (blockPeak, std::max (std::abs (outL[i]), std::abs (outR[i])));
+
+    {
+        const juce::SpinLock::ScopedLockType ssl (scopeLock);
+        if (blockPeak > 0.0005f)
+        {
+            silentSamplesHold = 0;
+            int step = std::max (1, numSamples / 4);
+            for (int i = 0; i < numSamples; i += step)
+            {
+                float mono = 0.5f * (outL[i] + outR[i]);
+                scopeRing[static_cast<size_t> (scopeWriteIdx)] = juce::jlimit (-1.0f, 1.0f, mono);
+                scopeWriteIdx = (scopeWriteIdx + 1) % scopeHistorySize;
+            }
+        }
+        else
+        {
+            silentSamplesHold += numSamples;
+            if (silentSamplesHold >= static_cast<int> (currentSampleRate * 0.14))
+                scopeRing.fill (0.0f);
         }
     }
 }
@@ -1141,6 +1171,7 @@ bool RythmeAudioProcessor::savePresetMn6x (const juce::File& file)
     xml->setAttribute ("brandLetters", brandLetters);
     xml->setAttribute ("pluginTitleText", pluginTitleText);
     xml->setAttribute ("logoStyleId", logoStyleId);
+    xml->setAttribute ("logoColourIdx", logoColourIdx);
     xml->setAttribute ("knobStyleId", knobStyleId);
     xml->setAttribute ("faderStyleId", faderStyleId);
     xml->setAttribute ("switchStyleId", switchStyleId);
@@ -1154,8 +1185,8 @@ bool RythmeAudioProcessor::savePresetMn6x (const juce::File& file)
         gx->setAttribute ("muted", g.muted ? 1 : 0);
         gx->setAttribute ("soloed", g.soloed ? 1 : 0);
         gx->setAttribute ("ksNote", g.keyswitchNote);
-        gx->setAttribute ("vol", g.volume);
-        gx->setAttribute ("pan", g.pan);
+        gx->setAttribute ("vol100", g.volumeDb100);
+        gx->setAttribute ("pan50", g.pan50);
         for (int s = 0; s < SampleGroup::numFxSlots; ++s)
         {
             const auto& slot = g.fxSlots[static_cast<size_t> (s)];
@@ -1163,7 +1194,8 @@ bool RythmeAudioProcessor::savePresetMn6x (const juce::File& file)
             sx->setAttribute ("idx", s);
             sx->setAttribute ("type", static_cast<int> (slot.type));
             sx->setAttribute ("en", slot.enabled ? 1 : 0);
-            sx->setAttribute ("p1", slot.p1); sx->setAttribute ("p2", slot.p2); sx->setAttribute ("p3", slot.p3);
+            sx->setAttribute ("p1", slot.p1); sx->setAttribute ("p2", slot.p2);
+            sx->setAttribute ("p3", slot.p3); sx->setAttribute ("p4", slot.p4); sx->setAttribute ("p5", slot.p5);
         }
     }
 
@@ -1192,12 +1224,12 @@ bool RythmeAudioProcessor::savePresetMn6x (const juce::File& file)
         zx->setAttribute ("fOut", z.fadeOutNorm);
         zx->setAttribute ("rev", z.reverse ? 1 : 0);
         zx->setAttribute ("pitch", z.pitchSemi);
-        zx->setAttribute ("pan", z.pan);
-        zx->setAttribute ("vol", z.volume);
-        zx->setAttribute ("atk", z.attackSec);
-        zx->setAttribute ("dec", z.decaySec);
-        zx->setAttribute ("sus", z.sustainLvl);
-        zx->setAttribute ("rel", z.releaseSec);
+        zx->setAttribute ("pan50", z.pan50);
+        zx->setAttribute ("vol100", z.volumeDb100);
+        zx->setAttribute ("atkMs", z.attackMs);
+        zx->setAttribute ("decMs", z.decayMs);
+        zx->setAttribute ("susPct", z.sustainPct);
+        zx->setAttribute ("relMs", z.releaseMs);
         zx->setAttribute ("cut", z.cutoffHz);
         zx->setAttribute ("res", z.resQ);
 
@@ -1231,6 +1263,7 @@ bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
     brandLetters = xml->getStringAttribute ("brandLetters", "N6");
     pluginTitleText = xml->getStringAttribute ("pluginTitleText", "RYTHME");
     logoStyleId = juce::jlimit (1, 4, xml->getIntAttribute ("logoStyleId", 1));
+    logoColourIdx = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("logoColourIdx", 0));
     knobStyleId = juce::jlimit (1, 10, xml->getIntAttribute ("knobStyleId", 1));
     faderStyleId = juce::jlimit (1, 10, xml->getIntAttribute ("faderStyleId", 1));
     switchStyleId = juce::jlimit (1, 10, xml->getIntAttribute ("switchStyleId", 1));
@@ -1247,8 +1280,8 @@ bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
             g.muted = gx->getIntAttribute ("muted", 0) != 0;
             g.soloed = gx->getIntAttribute ("soloed", 0) != 0;
             g.keyswitchNote = gx->getIntAttribute ("ksNote", -1);
-            g.volume = static_cast<float> (gx->getDoubleAttribute ("vol", 1.0));
-            g.pan = static_cast<float> (gx->getDoubleAttribute ("pan", 0.0));
+            g.volumeDb100 = static_cast<float> (gx->getDoubleAttribute ("vol100", 80.0));
+            g.pan50 = static_cast<float> (gx->getDoubleAttribute ("pan50", 0.0));
             for (auto* sx : gx->getChildIterator())
             {
                 if (sx->hasTagName ("FX"))
@@ -1260,6 +1293,8 @@ bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
                     slot.p1 = static_cast<float> (sx->getDoubleAttribute ("p1", 0.5));
                     slot.p2 = static_cast<float> (sx->getDoubleAttribute ("p2", 0.5));
                     slot.p3 = static_cast<float> (sx->getDoubleAttribute ("p3", 0.5));
+                    slot.p4 = static_cast<float> (sx->getDoubleAttribute ("p4", 0.5));
+                    slot.p5 = static_cast<float> (sx->getDoubleAttribute ("p5", 0.5));
                     slot.prepare (currentSampleRate);
                 }
             }
@@ -1303,13 +1338,13 @@ bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
                 z.fadeOutNorm = static_cast<float> (zx->getDoubleAttribute ("fOut", 0.0));
                 z.reverse = zx->getIntAttribute ("rev", 0) != 0;
                 z.pitchSemi = static_cast<float> (zx->getDoubleAttribute ("pitch", 0.0));
-                z.pan = static_cast<float> (zx->getDoubleAttribute ("pan", 0.0));
-                z.volume = static_cast<float> (zx->getDoubleAttribute ("vol", 1.0));
-                z.attackSec = static_cast<float> (zx->getDoubleAttribute ("atk", 0.005));
-                z.decaySec = static_cast<float> (zx->getDoubleAttribute ("dec", 0.30));
-                z.sustainLvl = static_cast<float> (zx->getDoubleAttribute ("sus", 0.85));
-                z.releaseSec = static_cast<float> (zx->getDoubleAttribute ("rel", 0.25));
-                z.cutoffHz = static_cast<float> (zx->getDoubleAttribute ("cut", 18000.0));
+                z.pan50 = static_cast<float> (zx->getDoubleAttribute ("pan50", 0.0));
+                z.volumeDb100 = static_cast<float> (zx->getDoubleAttribute ("vol100", 80.0));
+                z.attackMs = static_cast<float> (zx->getDoubleAttribute ("atkMs", 0.10));
+                z.decayMs = static_cast<float> (zx->getDoubleAttribute ("decMs", 300.0));
+                z.sustainPct = static_cast<float> (zx->getDoubleAttribute ("susPct", 85.0));
+                z.releaseMs = static_cast<float> (zx->getDoubleAttribute ("relMs", 250.0));
+                z.cutoffHz = static_cast<float> (zx->getDoubleAttribute ("cut", 20000.0));
                 z.resQ = static_cast<float> (zx->getDoubleAttribute ("res", 0.707));
             }
             if (auto* layersXml = zx->getChildByName ("LAYERS"))
