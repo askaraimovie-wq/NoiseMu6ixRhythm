@@ -4,6 +4,14 @@ on:
   push:
     branches: [ "main", "master" ]
   workflow_dispatch:
+    inputs:
+      version_tag:
+        description: "Optional version override (leave empty for sequential auto v1.2.2 -> v1.2.3 -> ...)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
 
 jobs:
   build-windows-vst3:
@@ -12,15 +20,61 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine Sequential Version
+        id: ver
+        shell: pwsh
+        run: |
+          $manual = "${{ github.event.inputs.version_tag }}"
+          if (-not [string]::IsNullOrWhiteSpace($manual)) {
+            $verStr = if ($manual.StartsWith("v")) { $manual } else { "v$manual" }
+          } else {
+            $verFile = ".rythme_version"
+            if (Test-Path $verFile) {
+              $raw = (Get-Content $verFile -Raw).Trim()
+              if ($raw -match '^v?(\d+)\.(\d+)\.(\d+)$') {
+                $maj = [int]$Matches[1]
+                $min = [int]$Matches[2]
+                $pat = [int]$Matches[3] + 1
+                $verStr = "v$maj.$min.$pat"
+              } else {
+                $verStr = "v1.2.2"
+              }
+            } else {
+              $verStr = "v1.2.2"
+            }
+            Set-Content -Path $verFile -Value $verStr -NoNewline
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add $verFile
+            git commit -m "chore: bump RYTHME version to $verStr [skip ci]"
+            git push
+          }
+          "ver_str=$verStr" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DRYTHME_VERSION_STR="${{ steps.ver.outputs.ver_str }}"
 
       - name: Build VST3 Plugin
         run: cmake --build build --config Release --target RYTHME_VST3 --parallel
 
+      - name: Rename VST3 Bundle With Version Name
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.ver.outputs.ver_str }}"
+          $vstDir = "build/RYTHME_artefacts/Release/VST3"
+          $src = Get-ChildItem -Path $vstDir -Filter "*.vst3" | Select-Object -First 1
+          if ($null -ne $src) {
+            $targetName = "RYTHME $ver.vst3"
+            $dst = Join-Path $vstDir $targetName
+            if (Test-Path $dst) { Remove-Item -Recurse -Force $dst }
+            Rename-Item -Path $src.FullName -NewName $targetName
+          }
+
       - name: Upload VST3 Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RYTHME-v1.2.0-Windows-VST3
+          name: RYTHME-${{ steps.ver.outputs.ver_str }}-Windows-VST3
           path: build/RYTHME_artefacts/Release/VST3/*.vst3
