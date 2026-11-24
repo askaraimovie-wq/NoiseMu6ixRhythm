@@ -9,8 +9,8 @@
 #include <functional>
 #include <string>
 
-#ifndef RYTHME_AUTO_VERSION_STR
-#define RYTHME_AUTO_VERSION_STR "v1.2.5"
+#ifndef NOISE_MU6IX_AUTO_VERSION_STR
+#define NOISE_MU6IX_AUTO_VERSION_STR "v1.2.6"
 #endif
 
 struct FastSVF
@@ -122,7 +122,7 @@ struct SampleZone
     int rootKey = 60;
     int lowVel = 0;
     int highVel = 127;
-    juce::Colour colour { 0xff4ca3ff };
+    juce::Colour colour { 0xffe6e9ef };
     int colourIndex = 0;
 
     float startNorm = 0.0f;
@@ -202,8 +202,8 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "RYTHME " + getBuildVersionString(); }
-    static juce::String getBuildVersionString() { return juce::String (RYTHME_AUTO_VERSION_STR); }
+    const juce::String getName() const override { return "NOISE MU6IX " + getBuildVersionString(); }
+    static juce::String getBuildVersionString() { return juce::String (NOISE_MU6IX_AUTO_VERSION_STR); }
 
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
@@ -244,6 +244,7 @@ public:
     bool savePresetMn6x (const juce::File& file);
     bool loadPresetMn6x (const juce::File& file);
 
+    void setRootLibraryFolder (const juce::File& folder);
     void addLibraryFolderPersistent (const juce::File& folder);
     void sortLibraryPersistent();
     void removeLibraryEntryPersistent (int catIdx);
@@ -266,6 +267,7 @@ public:
     std::vector<SampleZone> zones;
     int selectedZoneIndex = -1;
 
+    juce::File rootLibraryFolder;
     std::vector<LibraryCategoryEntry> libraryCategories;
     bool loadedItemActive = false;
     juce::String loadedItemName;
@@ -273,15 +275,18 @@ public:
     int loadedItemKey = -1;
 
     juce::String brandLetters { "N6" };
-    juce::String pluginTitleText { "RYTHME" };
-    int logoStyleId = 1;    // 1..4
-    int logoColourIdx = 0;  // 0..11
-    int knobStyleId = 1;    // 1..10
-    int faderStyleId = 1;   // 1..10
-    int switchStyleId = 1;  // 1..10
+    juce::String pluginTitleText { "NOISE MU6IX" };
+    juce::String libraryNameText { "KINETIK" };
+    int logoStyleId = 1;       // 1..4
+    int logoColourIdx = 11;    // Vintage White default
+    int knobStyleId = 1;       // 1..10
+    int knobColourIdx = 11;    // Vintage White default
+    int faderStyleId = 1;      // 1..10
+    int faderColourIdx = 11;   // Vintage White default
+    int switchStyleId = 1;     // 1..10
+    int switchColourIdx = 11;  // Vintage White default
 
     std::atomic<bool> selectGroupOnly { true };
-    std::atomic<bool> seqBypass { false };
     std::atomic<bool> fxBypass { false };
     std::atomic<int> activeKeyswitchNote { -1 };
     std::atomic<float> seqPlayheadNorm { 0.0f };
@@ -312,6 +317,7 @@ private:
     bool wasTransportPlaying = false;
 
     juce::File getRegistryFile() const;
+    void scanFolderIntoCategories (const juce::File& folder);
     void saveLibraryRegistry();
     void loadLibraryRegistry();
 

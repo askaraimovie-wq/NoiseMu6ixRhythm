@@ -2,26 +2,15 @@
 #include <algorithm>
 #include <cmath>
 
-static juce::Colour getThemeAccent (int styleId)
-{
-    static const juce::Colour cols[10] = {
-        juce::Colour (0xff4ca3ff), juce::Colour (0xffff5599), juce::Colour (0xff4cc98f),
-        juce::Colour (0xffe8a138), juce::Colour (0xffa66cff), juce::Colour (0xff38c4d9),
-        juce::Colour (0xffee5253), juce::Colour (0xff2eb872), juce::Colour (0xffe04f8a),
-        juce::Colour (0xffd9c838)
-    };
-    return cols[juce::jlimit (0, 9, styleId - 1)];
-}
-
-// ---------------- StyledHorizontalFader (10 Distinct Visual Styles + Left/Right Drag + Right-Click Type + Double-Left-Click Default + No Wheel Change) ----------------
+// ---------------- StyledHorizontalFader ----------------
 StyledHorizontalFader::StyledHorizontalFader (const juce::String& labelText, double minV, double maxV, double defaultV, int decimals)
     : title (labelText), minVal (minV), maxVal (maxV), defaultVal (defaultV), numDecimals (decimals), currentValue (defaultV)
 {
     editor.setMultiLine (false);
     editor.setJustification (juce::Justification::centredRight);
-    editor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff141922));
-    editor.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff5aa9ff));
-    editor.setColour (juce::TextEditor::textColourId, juce::Colours::white);
+    editor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff0a0b0d));
+    editor.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xfff2f4f8));
+    editor.setColour (juce::TextEditor::textColourId, juce::Colour (0xfff2f4f8));
     editor.onReturnKey = [this]() { commitText(); };
     editor.onFocusLost = [this]() { commitText(); };
     addChildComponent (editor);
@@ -34,12 +23,19 @@ void StyledHorizontalFader::setValue (double v, bool notify)
     if (notify && onValueChanged) onValueChanged (currentValue);
 }
 
+void StyledHorizontalFader::setStyleAndColour (int id, juce::Colour col)
+{
+    styleId = juce::jlimit (1, 10, id);
+    accentCol = col;
+    repaint();
+}
+
 void StyledHorizontalFader::openTypeEditor()
 {
     isEditingText = true;
     editor.setText (numDecimals == 0 ? juce::String (static_cast<int> (std::round (currentValue)))
                                      : juce::String (currentValue, numDecimals), false);
-    editor.setBounds (getLocalBounds().removeFromTop (14).removeFromRight (48));
+    editor.setBounds (getLocalBounds().removeFromTop (13).removeFromRight (46));
     editor.setVisible (true);
     editor.grabKeyboardFocus();
     editor.selectAll();
@@ -57,7 +53,7 @@ void StyledHorizontalFader::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds();
     auto top = r.removeFromTop (13);
-    g.setColour (juce::Colour (0xffc9d4e8));
+    g.setColour (juce::Colour (0xffe8ecf2));
     g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
     g.drawText (title, top.removeFromLeft (top.getWidth() - 42), juce::Justification::centredLeft, true);
 
@@ -65,7 +61,7 @@ void StyledHorizontalFader::paint (juce::Graphics& g)
     {
         juce::String vStr = (numDecimals == 0) ? juce::String (static_cast<int> (std::round (currentValue)))
                                                : juce::String (currentValue, numDecimals);
-        g.setColour (juce::Colours::lightgrey);
+        g.setColour (juce::Colour (0xffcfd5df));
         g.drawText (vStr, top, juce::Justification::centredRight, false);
     }
 
@@ -73,68 +69,67 @@ void StyledHorizontalFader::paint (juce::Graphics& g)
     float norm = static_cast<float> ((currentValue - minVal) / std::max (1e-6, maxVal - minVal));
     float fillW = norm * tr.getWidth();
     float thumbX = tr.getX() + fillW;
-    auto acc = getThemeAccent (styleId);
+    auto acc = accentCol;
 
-    // 10 genuinely distinct visual fader geometries!
-    if (styleId == 1) // Classic Rounded Bar + Circle Cap
+    if (styleId == 1)
     {
-        g.setColour (juce::Colour (0xff121720)); g.fillRoundedRectangle (tr, 3.0f);
+        g.setColour (juce::Colour (0xff090a0c)); g.fillRoundedRectangle (tr, 3.0f);
         g.setColour (acc); g.fillRoundedRectangle (tr.withWidth (fillW), 3.0f);
         g.setColour (juce::Colours::white); g.fillEllipse (thumbX - 5.0f, tr.getCentreY() - 5.0f, 10.0f, 10.0f);
     }
-    else if (styleId == 2) // Thin Razor Line + Vertical Hardware Cap
+    else if (styleId == 2)
     {
         auto line = tr.withSizeKeepingCentre (tr.getWidth(), 3.0f);
-        g.setColour (juce::Colour (0xff121720)); g.fillRect (line);
+        g.setColour (juce::Colour (0xff090a0c)); g.fillRect (line);
         g.setColour (acc); g.fillRect (line.withWidth (fillW));
         g.setColour (juce::Colours::white); g.fillRoundedRectangle (thumbX - 3.5f, tr.getY() - 1.0f, 7.0f, tr.getHeight() + 2.0f, 2.0f);
     }
-    else if (styleId == 3) // Segmented LED Meter Blocks
+    else if (styleId == 3)
     {
         int segs = 14;
         float sw = tr.getWidth() / segs;
         for (int i = 0; i < segs; ++i)
         {
             bool lit = (i / static_cast<float> (segs)) < norm;
-            g.setColour (lit ? acc : juce::Colour (0xff181e29));
+            g.setColour (lit ? acc : juce::Colour (0xff121418));
             g.fillRect (tr.getX() + i * sw + 1.0f, tr.getY() + 1.0f, sw - 2.0f, tr.getHeight() - 2.0f);
         }
     }
-    else if (styleId == 4) // Full-Height Solid Meter Block
+    else if (styleId == 4)
     {
-        g.setColour (juce::Colour (0xff121720)); g.fillRect (tr);
+        g.setColour (juce::Colour (0xff090a0c)); g.fillRect (tr);
         g.setColour (acc.withAlpha (0.85f)); g.fillRect (tr.withWidth (fillW));
         g.setColour (juce::Colours::white); g.fillRect (thumbX - 1.5f, tr.getY(), 3.0f, tr.getHeight());
     }
-    else if (styleId == 5) // Pill Capsule + Diamond Thumb
+    else if (styleId == 5)
     {
-        g.setColour (juce::Colour (0xff141924)); g.fillRoundedRectangle (tr, tr.getHeight() * 0.5f);
+        g.setColour (juce::Colour (0xff0c0e12)); g.fillRoundedRectangle (tr, tr.getHeight() * 0.5f);
         g.setColour (acc); g.fillRoundedRectangle (tr.withWidth (fillW), tr.getHeight() * 0.5f);
         juce::Path d;
         d.startNewSubPath (thumbX, tr.getY() - 1.0f); d.lineTo (thumbX + 6.0f, tr.getCentreY());
         d.lineTo (thumbX, tr.getBottom() + 1.0f); d.lineTo (thumbX - 6.0f, tr.getCentreY()); d.closeSubPath();
         g.setColour (juce::Colours::white); g.fillPath (d);
     }
-    else if (styleId == 6) // Double Rail Hardware Fader
+    else if (styleId == 6)
     {
-        g.setColour (juce::Colour (0xff273245)); g.drawRect (tr, 1.2f);
+        g.setColour (juce::Colour (0xffcfd5df)); g.drawRect (tr, 1.2f);
         g.setColour (acc); g.fillRect (tr.reduced (2.0f).withWidth (std::max (0.0f, fillW - 4.0f)));
-        g.setColour (juce::Colour (0xffdce5f5)); g.fillRect (thumbX - 5.0f, tr.getY() - 1.0f, 10.0f, tr.getHeight() + 2.0f);
+        g.setColour (juce::Colours::white); g.fillRect (thumbX - 5.0f, tr.getY() - 1.0f, 10.0f, tr.getHeight() + 2.0f);
         g.setColour (juce::Colours::black); g.drawVerticalLine (static_cast<int> (thumbX), tr.getY(), tr.getBottom());
     }
-    else if (styleId == 7) // Neon Glow Center Line + Ring Thumb
+    else if (styleId == 7)
     {
         auto line = tr.withSizeKeepingCentre (tr.getWidth(), 4.0f);
-        g.setColour (juce::Colour (0xff11151c)); g.fillRoundedRectangle (line, 2.0f);
+        g.setColour (juce::Colour (0xff090a0c)); g.fillRoundedRectangle (line, 2.0f);
         g.setColour (acc.withAlpha (0.35f)); g.fillRoundedRectangle (line.withWidth (fillW).expanded (0.0f, 2.0f), 3.0f);
         g.setColour (acc); g.fillRoundedRectangle (line.withWidth (fillW), 2.0f);
-        g.setColour (juce::Colour (0xff11151c)); g.fillEllipse (thumbX - 5.5f, tr.getCentreY() - 5.5f, 11.0f, 11.0f);
+        g.setColour (juce::Colour (0xff090a0c)); g.fillEllipse (thumbX - 5.5f, tr.getCentreY() - 5.5f, 11.0f, 11.0f);
         g.setColour (acc); g.drawEllipse (thumbX - 5.5f, tr.getCentreY() - 5.5f, 11.0f, 11.0f, 2.0f);
     }
-    else if (styleId == 8) // Vintage Triangle Pointer + Scale Ticks
+    else if (styleId == 8)
     {
-        g.setColour (juce::Colour (0xff161b24)); g.fillRect (tr);
-        g.setColour (juce::Colour (0xff3c4960));
+        g.setColour (juce::Colour (0xff0d0f13)); g.fillRect (tr);
+        g.setColour (juce::Colour (0xff8c95a6));
         for (int t = 0; t <= 10; ++t)
             g.drawVerticalLine (static_cast<int> (tr.getX() + (tr.getWidth() * t) / 10.0f), tr.getBottom() - 4.0f, tr.getBottom());
         g.setColour (acc); g.fillRect (tr.getX(), tr.getY(), fillW, 4.0f);
@@ -142,17 +137,17 @@ void StyledHorizontalFader::paint (juce::Graphics& g)
         tri.startNewSubPath (thumbX, tr.getY() + 2.0f); tri.lineTo (thumbX + 5.0f, tr.getBottom()); tri.lineTo (thumbX - 5.0f, tr.getBottom()); tri.closeSubPath();
         g.setColour (juce::Colours::white); g.fillPath (tri);
     }
-    else if (styleId == 9) // Minimal Bottom Underline + Square Block
+    else if (styleId == 9)
     {
-        g.setColour (juce::Colour (0xff2b3445)); g.drawHorizontalLine (static_cast<int> (tr.getBottom() - 2.0f), tr.getX(), tr.getRight());
+        g.setColour (juce::Colour (0xff7e8899)); g.drawHorizontalLine (static_cast<int> (tr.getBottom() - 2.0f), tr.getX(), tr.getRight());
         g.setColour (acc); g.fillRect (tr.getX(), tr.getBottom() - 3.5f, fillW, 3.0f);
         g.setColour (acc); g.fillRect (thumbX - 4.0f, tr.getY() + 1.0f, 8.0f, tr.getHeight() - 3.0f);
     }
-    else // Style 10: Studio Console Slotted Fader
+    else
     {
-        g.setColour (juce::Colour (0xff0e1218)); g.fillRoundedRectangle (tr, 2.0f);
+        g.setColour (juce::Colour (0xff08090b)); g.fillRoundedRectangle (tr, 2.0f);
         g.setColour (acc); g.fillRect (tr.getX() + 1.0f, tr.getCentreY() - 2.0f, std::max (0.0f, fillW - 2.0f), 4.0f);
-        g.setColour (juce::Colour (0xff384357)); g.fillRoundedRectangle (thumbX - 6.0f, tr.getY(), 12.0f, tr.getHeight(), 2.0f);
+        g.setColour (juce::Colour (0xff2b303a)); g.fillRoundedRectangle (thumbX - 6.0f, tr.getY(), 12.0f, tr.getHeight(), 2.0f);
         g.setColour (acc); g.fillRect (thumbX - 1.0f, tr.getY() + 1.0f, 2.0f, tr.getHeight() - 2.0f);
     }
 }
@@ -160,7 +155,7 @@ void StyledHorizontalFader::paint (juce::Graphics& g)
 void StyledHorizontalFader::resized()
 {
     if (isEditingText)
-        editor.setBounds (getLocalBounds().removeFromTop (14).removeFromRight (48));
+        editor.setBounds (getLocalBounds().removeFromTop (13).removeFromRight (46));
 }
 
 void StyledHorizontalFader::updateFromX (int mx)
@@ -191,9 +186,9 @@ CenterZeroPanFader::CenterZeroPanFader (const juce::String& labelText) : title (
 {
     editor.setMultiLine (false);
     editor.setJustification (juce::Justification::centredRight);
-    editor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff141922));
-    editor.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff5aa9ff));
-    editor.setColour (juce::TextEditor::textColourId, juce::Colours::white);
+    editor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff0a0b0d));
+    editor.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xfff2f4f8));
+    editor.setColour (juce::TextEditor::textColourId, juce::Colour (0xfff2f4f8));
     editor.onReturnKey = [this]() { commitText(); };
     editor.onFocusLost = [this]() { commitText(); };
     addChildComponent (editor);
@@ -206,11 +201,18 @@ void CenterZeroPanFader::setValue (float v, bool notify)
     if (notify && onValueChanged) onValueChanged (value);
 }
 
+void CenterZeroPanFader::setStyleAndColour (int id, juce::Colour col)
+{
+    styleId = juce::jlimit (1, 10, id);
+    accentCol = col;
+    repaint();
+}
+
 void CenterZeroPanFader::openTypeEditor()
 {
     isEditingText = true;
     editor.setText (juce::String (static_cast<int> (std::round (value))), false);
-    editor.setBounds (getLocalBounds().removeFromTop (14).removeFromRight (44));
+    editor.setBounds (getLocalBounds().removeFromTop (13).removeFromRight (44));
     editor.setVisible (true);
     editor.grabKeyboardFocus();
     editor.selectAll();
@@ -228,22 +230,22 @@ void CenterZeroPanFader::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds();
     auto top = r.removeFromTop (13);
-    g.setColour (juce::Colour (0xffc9d4e8));
+    g.setColour (juce::Colour (0xffe8ecf2));
     g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
     g.drawText (title, top.removeFromLeft (top.getWidth() - 36), juce::Justification::centredLeft, false);
 
     if (! isEditingText)
     {
         juce::String valStr = (std::abs (value) < 0.5f) ? "0" : ((value > 0.0f ? "+" : "") + juce::String (static_cast<int> (std::round (value))));
-        g.setColour (juce::Colours::lightgrey);
+        g.setColour (juce::Colour (0xffcfd5df));
         g.drawText (valStr, top, juce::Justification::centredRight, false);
     }
 
     auto track = r.reduced (4, 4).toFloat();
-    auto acc = getThemeAccent (styleId);
-    g.setColour (juce::Colour (0xff121720));
+    auto acc = accentCol;
+    g.setColour (juce::Colour (0xff090a0c));
     g.fillRoundedRectangle (track, (styleId % 2 == 0) ? 1.5f : 4.0f);
-    g.setColour (juce::Colour (0xff2e3748));
+    g.setColour (juce::Colour (0xffb8c0cc));
     g.drawRoundedRectangle (track, (styleId % 2 == 0) ? 1.5f : 4.0f, 1.0f);
 
     float cx = track.getCentreX();
@@ -261,7 +263,7 @@ void CenterZeroPanFader::paint (juce::Graphics& g)
         g.fillRect (cx, track.getY() + 1.0f, thumbX - cx, track.getHeight() - 2.0f);
     }
 
-    g.setColour (juce::Colour (0xff8a99b3));
+    g.setColour (juce::Colour (0xff9aa4b5));
     g.fillEllipse (cx - 2.0f, track.getCentreY() - 2.0f, 4.0f, 4.0f);
 
     g.setColour (juce::Colours::white);
@@ -274,7 +276,7 @@ void CenterZeroPanFader::paint (juce::Graphics& g)
 void CenterZeroPanFader::resized()
 {
     if (isEditingText)
-        editor.setBounds (getLocalBounds().removeFromTop (14).removeFromRight (44));
+        editor.setBounds (getLocalBounds().removeFromTop (13).removeFromRight (44));
 }
 
 void CenterZeroPanFader::updateFromX (int mx)
@@ -302,7 +304,7 @@ void CenterZeroPanFader::mouseDoubleClick (const juce::MouseEvent& e)
     if (! e.mods.isRightButtonDown()) setValue (0.0f, true);
 }
 
-// ---------------- DragTypeNumberBox ----------------
+// ---------------- DragTypeNumberBox (Styled & Coloured by Knob Style/Colour) ----------------
 DragTypeNumberBox::DragTypeNumberBox (const juce::String& labelText, const juce::String& unitSuffix,
                                       double minV, double maxV, double defaultV, int decimals, bool showTopLabel)
     : title (labelText), suffix (unitSuffix), minVal (minV), maxVal (maxV), defaultVal (defaultV),
@@ -310,9 +312,9 @@ DragTypeNumberBox::DragTypeNumberBox (const juce::String& labelText, const juce:
 {
     editor.setMultiLine (false);
     editor.setJustification (juce::Justification::centred);
-    editor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff141922));
-    editor.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff5aa9ff));
-    editor.setColour (juce::TextEditor::textColourId, juce::Colours::white);
+    editor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff090a0c));
+    editor.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xfff2f4f8));
+    editor.setColour (juce::TextEditor::textColourId, juce::Colour (0xfff2f4f8));
     editor.onReturnKey = [this]() { commitText(); };
     editor.onFocusLost = [this]() { commitText(); };
     addChildComponent (editor);
@@ -330,6 +332,13 @@ void DragTypeNumberBox::setValue (double v, bool notify)
     currentValue = juce::jlimit (minVal, maxVal, v);
     repaint();
     if (notify && onValueChanged) onValueChanged (currentValue);
+}
+
+void DragTypeNumberBox::setStyleAndColour (int id, juce::Colour col)
+{
+    styleId = juce::jlimit (1, 10, id);
+    accentCol = col;
+    repaint();
 }
 
 void DragTypeNumberBox::openTypeEditor()
@@ -356,7 +365,7 @@ void DragTypeNumberBox::paint (juce::Graphics& g)
     if (hasLabel)
     {
         auto top = r.removeFromTop (13);
-        g.setColour (juce::Colour (0xffc9d4e8));
+        g.setColour (juce::Colour (0xffe8ecf2));
         g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
         g.drawText (title, top, juce::Justification::centred, false);
     }
@@ -364,13 +373,26 @@ void DragTypeNumberBox::paint (juce::Graphics& g)
     if (! isEditingText)
     {
         auto box = r.reduced (1, 1).toFloat();
-        auto acc = getThemeAccent (styleId);
-        g.setColour (juce::Colour (0xff141922));
-        g.fillRoundedRectangle (box, (styleId % 2 == 0) ? 2.0f : 5.0f);
-        g.setColour (acc.withAlpha (0.65f));
-        g.drawRoundedRectangle (box, (styleId % 2 == 0) ? 2.0f : 5.0f, 1.1f);
+        float corner = (styleId == 2 || styleId == 5 || styleId == 7) ? box.getHeight() * 0.5f
+                     : ((styleId % 2 == 0) ? 2.0f : 5.0f);
+        g.setColour (juce::Colour (0xff0a0b0d));
+        g.fillRoundedRectangle (box, corner);
+        g.setColour (accentCol);
+        g.drawRoundedRectangle (box, corner, (styleId == 4 || styleId == 8) ? 1.8f : 1.15f);
 
-        g.setColour (juce::Colours::white);
+        float norm = static_cast<float> ((currentValue - minVal) / std::max (1e-6, maxVal - minVal));
+        if (styleId == 3 || styleId == 7)
+        {
+            g.setColour (accentCol);
+            g.fillEllipse (box.getX() + 5.0f, box.getCentreY() - 2.5f, 5.0f, 5.0f);
+        }
+        else if (styleId == 4 || styleId == 9)
+        {
+            g.setColour (accentCol);
+            g.fillRect (box.getX() + 3.0f, box.getBottom() - 2.5f, std::max (2.0f, (box.getWidth() - 6.0f) * norm), 2.0f);
+        }
+
+        g.setColour (juce::Colour (0xfff2f4f8));
         g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
         g.drawText (formatDisplay(), box, juce::Justification::centred, true);
     }
@@ -385,11 +407,7 @@ void DragTypeNumberBox::resized()
 
 void DragTypeNumberBox::mouseDown (const juce::MouseEvent& e)
 {
-    if (e.mods.isRightButtonDown())
-    {
-        openTypeEditor();
-        return;
-    }
+    if (e.mods.isRightButtonDown()) { openTypeEditor(); return; }
     dragStartY = e.y;
     dragStartValue = currentValue;
 }
@@ -397,7 +415,7 @@ void DragTypeNumberBox::mouseDown (const juce::MouseEvent& e)
 void DragTypeNumberBox::mouseDrag (const juce::MouseEvent& e)
 {
     if (isEditingText || e.mods.isRightButtonDown()) return;
-    int dy = dragStartY - e.y; // Drag UP = increase, Drag DOWN = decrease
+    int dy = dragStartY - e.y;
     if (std::abs (dy) < 2) return;
     double span = maxVal - minVal;
     double sensitivity = e.mods.isShiftDown() ? 0.0015 : 0.006;
@@ -406,20 +424,19 @@ void DragTypeNumberBox::mouseDrag (const juce::MouseEvent& e)
 
 void DragTypeNumberBox::mouseDoubleClick (const juce::MouseEvent& e)
 {
-    if (! e.mods.isRightButtonDown())
-        setValue (defaultVal, true); // Double Left-Click = Reset to Default!
+    if (! e.mods.isRightButtonDown()) setValue (defaultVal, true);
 }
 
-// ---------------- GearIconButton (Vector 8-Tooth Gear Icon) ----------------
+// ---------------- GearIconButton & EditModeIconButton ----------------
 GearIconButton::GearIconButton() : juce::Button ("Settings") {}
 
 void GearIconButton::paintButton (juce::Graphics& g, bool over, bool down)
 {
     auto r = getLocalBounds().toFloat();
-    g.setColour (down ? juce::Colour (0xff3a4c69) : (over ? juce::Colour (0xff2f3e57) : juce::Colour (0xff232d3f)));
-    g.fillRoundedRectangle (r, 5.0f);
-    g.setColour (juce::Colour (0xff4c6185));
-    g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
+    g.setColour (down ? juce::Colour (0xff2a2f38) : (over ? juce::Colour (0xff1b1e24) : juce::Colour (0xff0e1014)));
+    g.fillRoundedRectangle (r, 4.0f);
+    g.setColour (juce::Colour (0xffe6e9ef));
+    g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.1f);
 
     float cx = r.getCentreX();
     float cy = r.getCentreY();
@@ -439,60 +456,252 @@ void GearIconButton::paintButton (juce::Graphics& g, bool over, bool down)
     }
     gear.closeSubPath();
 
-    g.setColour (juce::Colours::white);
+    g.setColour (juce::Colour (0xfff2f4f8));
     g.fillPath (gear);
-    g.setColour (juce::Colour (0xff232d3f));
+    g.setColour (juce::Colour (0xff0e1014));
     g.fillEllipse (cx - holeR, cy - holeR, holeR * 2.0f, holeR * 2.0f);
 }
 
-// ---------------- StyledSwitchButton (10 Distinct Visual Switch Styles) ----------------
-StyledSwitchButton::StyledSwitchButton (const juce::String& text) : juce::TextButton (text)
+EditModeIconButton::EditModeIconButton() : juce::Button ("EditMode") { setClickingTogglesState (true); }
+
+void EditModeIconButton::paintButton (juce::Graphics& g, bool over, bool down)
 {
-    setClickingTogglesState (true);
+    auto r = getLocalBounds().toFloat();
+    bool on = getToggleState();
+    g.setColour (on ? juce::Colour (0xfff2f4f8) : (down || over ? juce::Colour (0xff1b1e24) : juce::Colour (0xff0e1014)));
+    g.fillRoundedRectangle (r, 4.0f);
+    g.setColour (juce::Colour (0xffe6e9ef));
+    g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.1f);
+
+    juce::Colour ink = on ? juce::Colour (0xff0a0b0d) : juce::Colour (0xfff2f4f8);
+    g.setColour (ink);
+    float left = r.getX() + 6.0f;
+    float right = r.getRight() - 6.0f;
+    float ys[3] = { r.getY() + r.getHeight() * 0.28f, r.getY() + r.getHeight() * 0.50f, r.getY() + r.getHeight() * 0.72f };
+    float xs[3] = { left + (right - left) * 0.35f, left + (right - left) * 0.68f, left + (right - left) * 0.45f };
+    for (int i = 0; i < 3; ++i)
+    {
+        g.drawLine (left, ys[i], right, ys[i], 1.4f);
+        g.fillEllipse (xs[i] - 3.0f, ys[i] - 3.0f, 6.0f, 6.0f);
+    }
 }
 
-void StyledSwitchButton::setStyleId (int id, juce::Colour activeC)
+// ---------------- StyledSwitchButton ----------------
+StyledSwitchButton::StyledSwitchButton (const juce::String& text, bool isToggleable) : juce::TextButton (text)
+{
+    setClickingTogglesState (isToggleable);
+}
+
+void StyledSwitchButton::setStyleAndColour (int id, juce::Colour activeC)
 {
     styleId = juce::jlimit (1, 10, id);
     activeCol = activeC;
     repaint();
 }
 
-void StyledSwitchButton::paintButton (juce::Graphics& g, bool over, bool)
+void StyledSwitchButton::paintButton (juce::Graphics& g, bool over, bool down)
 {
     auto r = getLocalBounds().toFloat();
-    bool on = getToggleState();
+    bool on = getToggleState() || (down && ! getClickingTogglesState());
     float corner = (styleId == 2 || styleId == 5 || styleId == 7) ? r.getHeight() * 0.5f
                  : ((styleId % 2 == 0) ? 2.0f : 5.0f);
 
-    juce::Colour bg = on ? activeCol : (over ? juce::Colour (0xff2b3547) : juce::Colour (0xff1e2533));
+    juce::Colour bg = on ? activeCol : (over ? juce::Colour (0xff1a1d24) : juce::Colour (0xff0c0e12));
     g.setColour (bg);
     g.fillRoundedRectangle (r, corner);
 
-    g.setColour (on ? activeCol.brighter (0.4f) : juce::Colour (0xff3c4960));
+    g.setColour (on ? juce::Colours::white : juce::Colour (0xffd5dbe5));
     g.drawRoundedRectangle (r.reduced (0.5f), corner, (styleId == 4 || styleId == 8) ? 1.8f : 1.0f);
 
-    // Style-specific indicator accents
-    if (styleId == 3 || styleId == 7) // Left LED dot
+    if (styleId == 3 || styleId == 7)
     {
-        g.setColour (on ? juce::Colours::white : juce::Colour (0xff56647d));
+        g.setColour (on ? juce::Colour (0xff090a0c) : juce::Colour (0xff8c95a6));
         g.fillEllipse (r.getX() + 4.0f, r.getCentreY() - 2.5f, 5.0f, 5.0f);
     }
-    else if (styleId == 4 || styleId == 9) // Bottom indicator bar
+    else if (styleId == 4 || styleId == 9)
     {
-        g.setColour (on ? juce::Colours::white : juce::Colour (0xff49566e));
+        g.setColour (on ? juce::Colour (0xff090a0c) : juce::Colour (0xff9aa4b5));
         g.fillRect (r.getX() + 4.0f, r.getBottom() - 3.0f, r.getWidth() - 8.0f, 2.0f);
     }
-    else if (styleId == 6 || styleId == 10) // Top hardware bezel stripe
+    else if (styleId == 6 || styleId == 10)
     {
-        g.setColour (on ? juce::Colours::white : juce::Colour (0xff49566e));
+        g.setColour (on ? juce::Colour (0xff090a0c) : juce::Colour (0xff9aa4b5));
         g.fillRect (r.getX() + 4.0f, r.getY() + 2.0f, r.getWidth() - 8.0f, 2.0f);
     }
 
-    g.setColour (on ? juce::Colours::white : juce::Colour (0xffc9d4e8));
+    bool brightFill = on && (activeCol.getBrightness() > 0.62f);
+    g.setColour (brightFill ? juce::Colour (0xff090a0c) : juce::Colour (0xfff2f4f8));
     g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
     auto textRect = (styleId == 3 || styleId == 7) ? r.withTrimmedLeft (8.0f) : r;
     g.drawText (getButtonText(), textRect, juce::Justification::centred, true);
+}
+
+// ---------------- PermanentTitleScaleButton ----------------
+PermanentTitleScaleButton::PermanentTitleScaleButton (RythmeAudioProcessor& p, std::function<void(float)> onScaleSelected)
+    : processor (p), onScale (std::move (onScaleSelected)) {}
+
+void PermanentTitleScaleButton::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    g.setColour (juce::Colour (0xff0b0c0e));
+    g.fillRoundedRectangle (r, 4.0f);
+    g.setColour (juce::Colour (0xfff2f4f8));
+    g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.2f);
+
+    g.setColour (juce::Colour (0xfff2f4f8));
+    g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+    juce::String txt = processor.pluginTitleText.isEmpty() ? "NOISE MU6IX" : processor.pluginTitleText;
+    g.drawText (txt, r.reduced (6.0f, 0.0f), juce::Justification::centred, true);
+}
+
+void PermanentTitleScaleButton::mouseDown (const juce::MouseEvent&)
+{
+    juce::PopupMenu menu;
+    menu.addItem (1, "50%");
+    menu.addItem (2, "75%");
+    menu.addItem (3, "100% (Default)");
+    menu.addItem (4, "120%");
+    menu.addItem (5, "150%");
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
+        [this] (int res)
+        {
+            if (! onScale) return;
+            if (res == 1) onScale (0.50f);
+            else if (res == 2) onScale (0.75f);
+            else if (res == 3) onScale (1.00f);
+            else if (res == 4) onScale (1.20f);
+            else if (res == 5) onScale (1.50f);
+        });
+}
+
+// ---------------- PresetBarWidget ----------------
+PresetBarWidget::PresetBarWidget (RythmeAudioProcessor& p,
+                                std::function<void()> onSaveClicked,
+                                std::function<void(const juce::File&)> onLoadFile,
+                                std::function<void()> onSetRootFolder)
+    : processor (p), saveCb (std::move (onSaveClicked)), loadFileCb (std::move (onLoadFile)), setRootCb (std::move (onSetRootFolder))
+{
+    dropdownBtn.setButtonText ("v");
+    dropdownBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff121418));
+    dropdownBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f4f8));
+    dropdownBtn.onClick = [this]() { openCascadingPresetMenu(); };
+    addAndMakeVisible (dropdownBtn);
+
+    libNameEditor.setMultiLine (false);
+    libNameEditor.setJustification (juce::Justification::centred);
+    libNameEditor.setText (processor.libraryNameText.isEmpty() ? "KINETIK" : processor.libraryNameText, juce::dontSendNotification);
+    libNameEditor.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+    libNameEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff090a0c));
+    libNameEditor.setColour (juce::TextEditor::textColourId, juce::Colour (0xfff2f4f8));
+    libNameEditor.setColour (juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+    libNameEditor.onTextChange = [this]()
+    {
+        processor.libraryNameText = libNameEditor.getText().trim();
+        processor.currentPresetName = processor.libraryNameText;
+    };
+    addAndMakeVisible (libNameEditor);
+
+    saveIconBtn.setButtonText ("[S]");
+    saveIconBtn.setTooltip ("Save Preset (or Save As if new)");
+    saveIconBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff121418));
+    saveIconBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f4f8));
+    saveIconBtn.onClick = [this]() { if (saveCb) saveCb(); };
+    addAndMakeVisible (saveIconBtn);
+}
+
+void PresetBarWidget::refreshTextFromProcessor()
+{
+    libNameEditor.setText (processor.libraryNameText.isEmpty() ? "KINETIK" : processor.libraryNameText, juce::dontSendNotification);
+}
+
+void PresetBarWidget::buildFolderSubMenu (juce::PopupMenu& menu, const juce::File& dir, int& nextId, std::map<int, juce::File>& idMap)
+{
+    if (! dir.isDirectory()) return;
+
+    juce::Array<juce::File> subDirs;
+    dir.findChildFiles (subDirs, juce::File::findDirectories, false);
+    subDirs.sort();
+
+    for (const auto& sd : subDirs)
+    {
+        juce::PopupMenu sub;
+        buildFolderSubMenu (sub, sd, nextId, idMap);
+        menu.addSubMenu (sd.getFileName(), sub);
+    }
+
+    juce::Array<juce::File> files;
+    dir.findChildFiles (files, juce::File::findFiles, false, "*.mn6x;*.wav;*.aiff;*.flac");
+    files.sort();
+    for (const auto& f : files)
+    {
+        int id = nextId++;
+        idMap[id] = f;
+        menu.addItem (id, f.getFileNameWithoutExtension());
+    }
+}
+
+void PresetBarWidget::openCascadingPresetMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem (1, "Set Root Library Folder...");
+    menu.addSeparator();
+
+    int nextId = 100;
+    std::map<int, juce::File> idMap;
+
+    if (processor.rootLibraryFolder.isDirectory())
+    {
+        buildFolderSubMenu (menu, processor.rootLibraryFolder, nextId, idMap);
+    }
+    else
+    {
+        const juce::ScopedLock sl (processor.zoneLock);
+        for (const auto& cat : processor.libraryCategories)
+        {
+            juce::PopupMenu sub;
+            if (cat.folder.isDirectory())
+                buildFolderSubMenu (sub, cat.folder, nextId, idMap);
+            else
+                for (const auto& item : cat.items)
+                {
+                    int id = nextId++;
+                    idMap[id] = item;
+                    sub.addItem (id, item.getFileNameWithoutExtension());
+                }
+            menu.addSubMenu (cat.name, sub);
+        }
+    }
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&dropdownBtn),
+        [this, idMap] (int res)
+        {
+            if (res == 1)
+            {
+                if (setRootCb) setRootCb();
+                return;
+            }
+            auto it = idMap.find (res);
+            if (it != idMap.end() && loadFileCb)
+                loadFileCb (it->second);
+        });
+}
+
+void PresetBarWidget::resized()
+{
+    auto r = getLocalBounds();
+    dropdownBtn.setBounds (r.removeFromLeft (24));
+    saveIconBtn.setBounds (r.removeFromRight (28));
+    libNameEditor.setBounds (r);
+}
+
+void PresetBarWidget::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    g.setColour (juce::Colour (0xff090a0c));
+    g.fillRoundedRectangle (r, 4.0f);
+    g.setColour (juce::Colour (0xffe6e9ef));
+    g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.15f);
 }
 
 // ---------------- AdsrGraphComponent ----------------
@@ -501,9 +710,9 @@ AdsrGraphComponent::AdsrGraphComponent (RythmeAudioProcessor& p) : processor (p)
 void AdsrGraphComponent::paint (juce::Graphics& g)
 {
     auto area = getLocalBounds().toFloat();
-    g.setColour (juce::Colour (0xff111620));
+    g.setColour (juce::Colour (0xff090a0c));
     g.fillRoundedRectangle (area, 4.0f);
-    g.setColour (juce::Colour (0xff2e3748));
+    g.setColour (juce::Colour (0xffd5dbe5));
     g.drawRoundedRectangle (area.reduced (0.5f), 4.0f, 1.0f);
 
     float atk = 0.10f, dec = 300.0f, sus = 85.0f, rel = 250.0f;
@@ -545,9 +754,9 @@ void AdsrGraphComponent::paint (juce::Graphics& g)
     fillPath.lineTo (x0, yBot);
     fillPath.closeSubPath();
 
-    g.setColour (juce::Colour (0x334ca3ff));
+    g.setColour (juce::Colour (0x28ffffff));
     g.fillPath (fillPath);
-    g.setColour (juce::Colour (0xff66b3ff));
+    g.setColour (juce::Colour (0xfff2f4f8));
     g.strokePath (envPath, juce::PathStrokeType (1.8f));
 
     g.setColour (juce::Colours::white);
@@ -562,9 +771,9 @@ FabStyleFxDisplay::FabStyleFxDisplay (RythmeAudioProcessor& p) : processor (p) {
 void FabStyleFxDisplay::paint (juce::Graphics& g)
 {
     auto area = getLocalBounds().toFloat();
-    g.setColour (juce::Colour (0xff0e131b));
+    g.setColour (juce::Colour (0xff08090b));
     g.fillRoundedRectangle (area, 5.0f);
-    g.setColour (juce::Colour (0xff314059));
+    g.setColour (juce::Colour (0xffd5dbe5));
     g.drawRoundedRectangle (area.reduced (0.5f), 5.0f, 1.0f);
 
     SimpleFxSlot slotCopy;
@@ -575,7 +784,7 @@ void FabStyleFxDisplay::paint (juce::Graphics& g)
     }
 
     auto r = area.reduced (8.0f, 6.0f);
-    g.setColour (juce::Colour (0xff1a2230));
+    g.setColour (juce::Colour (0xff181b20));
     for (int i = 1; i <= 4; ++i)
         g.drawVerticalLine (static_cast<int> (r.getX() + (r.getWidth() * i) / 5.0f), r.getY(), r.getBottom());
     g.drawHorizontalLine (static_cast<int> (r.getCentreY()), r.getX(), r.getRight());
@@ -594,19 +803,20 @@ void FabStyleFxDisplay::paint (juce::Graphics& g)
             float py = midY - hist[static_cast<size_t> (i)] * (r.getHeight() * 0.42f);
             wave.lineTo (px, py);
         }
-        g.setColour (juce::Colour (0x44ffffff));
+        g.setColour (juce::Colour (0x55ffffff));
         g.strokePath (wave, juce::PathStrokeType (1.0f));
     }
 
-    juce::Path curve;
-    juce::Colour curveCol = slotCopy.enabled ? juce::Colour (0xffffb838) : juce::Colour (0xff5c677d);
     if (slotCopy.type == SimpleFxType::Off)
     {
-        g.setColour (juce::Colour (0xff6e7b91));
+        g.setColour (juce::Colour (0xff9aa4b5));
         g.setFont (10.5f);
         g.drawText ("Select Pro-EQ / Pro-Comp / Saturn-Sat / Timeless-Dly / Pro-Rev", r, juce::Justification::centred);
         return;
     }
+
+    juce::Path curve;
+    juce::Colour curveCol = slotCopy.enabled ? juce::Colour (0xfff2f4f8) : juce::Colour (0xff6c7587);
 
     int steps = 64;
     for (int i = 0; i <= steps; ++i)
@@ -644,7 +854,7 @@ void FabStyleFxDisplay::paint (juce::Graphics& g)
         if (i == 0) curve.startNewSubPath (px, py); else curve.lineTo (px, py);
     }
 
-    g.setColour (curveCol.withAlpha (0.22f));
+    g.setColour (curveCol.withAlpha (0.20f));
     juce::Path fillC (curve);
     fillC.lineTo (r.getRight(), r.getBottom());
     fillC.lineTo (r.getX(), r.getBottom());
@@ -655,139 +865,19 @@ void FabStyleFxDisplay::paint (juce::Graphics& g)
     g.strokePath (curve, juce::PathStrokeType (2.0f));
 }
 
-// ---------------- BrandLogoHeader ----------------
-BrandLogoHeader::BrandLogoHeader (RythmeAudioProcessor& p, std::function<void()> onClickMenu)
-    : processor (p), onClick (std::move (onClickMenu)) {}
-
-void BrandLogoHeader::paint (juce::Graphics& g)
-{
-    auto r = getLocalBounds().toFloat();
-    g.setColour (juce::Colour (0xff141923));
-    g.fillRoundedRectangle (r, 6.0f);
-    g.setColour (juce::Colour (0xff364661));
-    g.drawRoundedRectangle (r.reduced (0.5f), 6.0f, 1.0f);
-
-    auto badge = r.removeFromLeft (46.0f).reduced (5.0f, 4.0f);
-    float cx = badge.getCentreX();
-    float cy = badge.getCentreY();
-    float rx = badge.getWidth() * 0.46f;
-    float ry = badge.getHeight() * 0.46f;
-
-    juce::Colour logoCol = RythmeAudioProcessor::getPaletteColour (processor.logoColourIdx);
-    int lStyle = juce::jlimit (1, 4, processor.logoStyleId);
-
-    if (lStyle == 1)
-    {
-        juce::Path shield;
-        shield.startNewSubPath (cx, cy - ry);
-        shield.lineTo (cx + rx, cy - ry * 0.45f);
-        shield.lineTo (cx + rx * 0.85f, cy + ry * 0.55f);
-        shield.lineTo (cx, cy + ry);
-        shield.lineTo (cx - rx * 0.85f, cy + ry * 0.55f);
-        shield.lineTo (cx - rx, cy - ry * 0.45f);
-        shield.closeSubPath();
-        g.setColour (logoCol.darker (0.45f)); g.fillPath (shield);
-        g.setColour (logoCol.brighter (0.25f)); g.strokePath (shield, juce::PathStrokeType (1.4f));
-    }
-    else if (lStyle == 2)
-    {
-        g.setColour (logoCol.darker (0.45f)); g.fillRoundedRectangle (badge, 8.0f);
-        g.setColour (logoCol.brighter (0.25f)); g.drawRoundedRectangle (badge.reduced (0.5f), 8.0f, 1.5f);
-    }
-    else if (lStyle == 3)
-    {
-        juce::Path hex;
-        for (int i = 0; i < 6; ++i)
-        {
-            float ang = juce::MathConstants<float>::pi / 3.0f * i - juce::MathConstants<float>::pi * 0.5f;
-            float px = cx + rx * std::cos (ang);
-            float py = cy + ry * std::sin (ang);
-            if (i == 0) hex.startNewSubPath (px, py); else hex.lineTo (px, py);
-        }
-        hex.closeSubPath();
-        g.setColour (logoCol.darker (0.45f)); g.fillPath (hex);
-        g.setColour (logoCol.brighter (0.25f)); g.strokePath (hex, juce::PathStrokeType (1.4f));
-    }
-    else
-    {
-        g.setColour (logoCol.darker (0.45f)); g.fillEllipse (badge);
-        g.setColour (logoCol.brighter (0.25f)); g.drawEllipse (badge.reduced (0.5f), 1.5f);
-    }
-
-    g.setColour (juce::Colours::white);
-    g.setFont (juce::FontOptions (13.5f, juce::Font::bold));
-    g.drawText (processor.brandLetters.isEmpty() ? "N6" : processor.brandLetters, badge, juce::Justification::centred, false);
-
-    g.setColour (juce::Colours::white);
-    g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
-    g.drawText (processor.pluginTitleText.isEmpty() ? "RYTHME" : processor.pluginTitleText,
-                r.reduced (4.0f, 0.0f), juce::Justification::centredLeft, true);
-}
-
-// ---------------- MountedSoundCard ----------------
-MountedSoundCard::MountedSoundCard (std::function<void()> onCloseClicked) : onClose (std::move (onCloseClicked))
-{
-    closeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff5c2633));
-    closeBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
-    closeBtn.onClick = [this]() { if (onClose) onClose(); };
-    addAndMakeVisible (closeBtn);
-}
-
-void MountedSoundCard::setItem (const juce::String& name, bool isActive)
-{
-    itemName = name;
-    active = isActive;
-    closeBtn.setVisible (active);
-    repaint();
-}
-
-void MountedSoundCard::paint (juce::Graphics& g)
-{
-    auto r = getLocalBounds().toFloat();
-    g.setColour (active ? juce::Colour (0xff1d283a) : juce::Colour (0xff141821));
-    g.fillRoundedRectangle (r, 5.0f);
-    g.setColour (active ? juce::Colour (0xff4ca3ff) : juce::Colour (0xff293242));
-    g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
-
-    if (active)
-    {
-        g.setColour (juce::Colour (0xff74b9ff));
-        g.setFont (juce::FontOptions (8.5f, juce::Font::bold));
-        g.drawText ("LOADED", 8, 3, getWidth() - 34, 11, juce::Justification::centredLeft, true);
-
-        g.setColour (juce::Colours::white);
-        g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
-        g.drawText (itemName, 8, 15, getWidth() - 34, 18, juce::Justification::centredLeft, true);
-    }
-    else
-    {
-        g.setColour (juce::Colour (0xff64728a));
-        g.setFont (juce::FontOptions (10.0f, juce::Font::plain));
-        g.drawText ("Empty (Click Kick/Item)", r.reduced (6.0f), juce::Justification::centred, true);
-    }
-}
-
-void MountedSoundCard::resized()
-{
-    auto r = getLocalBounds().reduced (4);
-    closeBtn.setBounds (r.removeFromRight (22).withSizeKeepingCentre (22, 22));
-}
-
 // ---------------- LiveMainWaveDisplay ----------------
 LiveMainWaveDisplay::LiveMainWaveDisplay (RythmeAudioProcessor& p) : processor (p) {}
 
 void LiveMainWaveDisplay::paint (juce::Graphics& g)
 {
     auto area = getLocalBounds().toFloat();
-    g.setColour (juce::Colour (0xff0b0c0e));
-    g.fillRoundedRectangle (area, 7.0f);
-    g.setColour (juce::Colour (0xff474b52));
-    g.drawRoundedRectangle (area.reduced (0.5f), 7.0f, 1.5f);
-    g.setColour (juce::Colour (0xff232529));
-    g.drawRoundedRectangle (area.reduced (3.0f), 5.0f, 1.0f);
+    g.setColour (juce::Colour (0xff07080a));
+    g.fillRoundedRectangle (area, 6.0f);
+    g.setColour (juce::Colour (0xfff2f4f8));
+    g.drawRoundedRectangle (area.reduced (0.5f), 6.0f, 1.3f);
 
     auto screen = area.reduced (7.0f, 6.0f);
-    g.setColour (juce::Colour (0xff191b1f));
+    g.setColour (juce::Colour (0xff191c22));
     for (int i = 1; i < 8; ++i)
         g.drawVerticalLine (static_cast<int> (screen.getX() + (screen.getWidth() * i) / 8.0f), screen.getY(), screen.getBottom());
     g.drawHorizontalLine (static_cast<int> (screen.getCentreY()), screen.getX(), screen.getRight());
@@ -813,7 +903,7 @@ void LiveMainWaveDisplay::paint (juce::Graphics& g)
 
     g.setColour (juce::Colour (0x38ffffff));
     g.strokePath (wave, juce::PathStrokeType (3.2f));
-    g.setColour (juce::Colour (0xfff2f3f5));
+    g.setColour (juce::Colour (0xfff2f4f8));
     g.strokePath (wave, juce::PathStrokeType (1.4f));
 }
 
@@ -823,7 +913,7 @@ ColorPianoStrip::ColorPianoStrip (RythmeAudioProcessor& p) : processor (p) {}
 void ColorPianoStrip::paint (juce::Graphics& g)
 {
     auto area = getLocalBounds();
-    g.fillAll (juce::Colour (0xff12161e));
+    g.fillAll (juce::Colour (0xff090a0c));
     float keyW = area.getWidth() / static_cast<float> (numKeys);
     int activeNote = processor.lastPlayedNote.load();
     int activeKs = processor.activeKeyswitchNote.load();
@@ -837,30 +927,24 @@ void ColorPianoStrip::paint (juce::Graphics& g)
         juce::Rectangle<float> kr (area.getX() + i * keyW, static_cast<float> (area.getY()), keyW, static_cast<float> (area.getHeight()));
 
         bool isKs = processor.isKeyswitchNote (note);
-        juce::Colour mappedCol = juce::Colours::transparentBlack;
         bool isMapped = false;
         for (const auto& z : processor.zones)
-        {
             if (note >= z.lowKey && note <= z.highKey)
-            {
-                mappedCol = z.colour;
                 isMapped = true;
-            }
-        }
 
         if (note == pressedNote || note == activeNote) g.setColour (juce::Colours::white);
-        else if (isKs) g.setColour (note == activeKs ? juce::Colour (0xffff3b3b) : juce::Colour (0xffb82525));
-        else if (isMapped) g.setColour (isBlack ? mappedCol.darker (0.35f) : mappedCol);
-        else g.setColour (isBlack ? juce::Colour (0xff191e28) : juce::Colour (0xffcfd7e3));
+        else if (isKs) g.setColour (note == activeKs ? juce::Colour (0xfff2f4f8) : juce::Colour (0xff8c95a6));
+        else if (isMapped) g.setColour (isBlack ? juce::Colour (0xff8c95a6) : juce::Colour (0xfff2f4f8));
+        else g.setColour (isBlack ? juce::Colour (0xff111318) : juce::Colour (0xffd5dbe5));
 
         g.fillRect (kr);
-        g.setColour (juce::Colour (0xff232a36));
-        g.drawRect (kr, 0.5f);
+        g.setColour (juce::Colour (0xff090a0c));
+        g.drawRect (kr, 0.6f);
 
         if (n == 0)
         {
             int oct = note / 12;
-            g.setColour ((isMapped || isKs) ? juce::Colours::white : juce::Colours::darkgrey);
+            g.setColour (isBlack ? juce::Colour (0xffcfd5df) : juce::Colour (0xff121418));
             g.setFont (7.5f);
             g.drawText ("C" + juce::String (oct), kr.expanded (5.0f, 0.0f), juce::Justification::centredBottom, false);
         }
@@ -1027,8 +1111,8 @@ juce::Rectangle<float> KeyMapperComponent::getZoneRect (const SampleZone& z, juc
 void KeyMapperComponent::paint (juce::Graphics& g)
 {
     auto area = getLocalBounds();
-    g.fillAll (juce::Colour (0xff161b24));
-    g.setColour (juce::Colour (0xff2e3748));
+    g.fillAll (juce::Colour (0xff0b0c0e));
+    g.setColour (juce::Colour (0xffe6e9ef));
     g.drawRect (area, 1);
 
     auto gridArea = getGridArea();
@@ -1039,18 +1123,18 @@ void KeyMapperComponent::paint (juce::Graphics& g)
     {
         float norm = i / static_cast<float> (divs);
         int y = gridArea.getBottom() - static_cast<int> (norm * gridArea.getHeight());
-        g.setColour (juce::Colour (0xff222936));
+        g.setColour (juce::Colour (0xff232730));
         g.drawHorizontalLine (y, static_cast<float> (gridArea.getX()), static_cast<float> (gridArea.getRight()));
         if (! readOnly && (divs <= 8 || i % 2 == 0))
         {
-            g.setColour (juce::Colour (0xff8a99b3));
+            g.setColour (juce::Colour (0xffcfd5df));
             g.setFont (8.5f);
             g.drawText (juce::String (static_cast<int> (std::round (norm * 127.0f))), 2, y - 6, 22, 12, juce::Justification::centredRight, false);
         }
     }
 
     float keyW = gridArea.getWidth() / static_cast<float> (numKeys);
-    g.setColour (juce::Colour (0xff232b38));
+    g.setColour (juce::Colour (0xff262b34));
     for (int i = 0; i < numKeys; ++i)
         if ((startNote + i) % 12 == 0)
             g.drawVerticalLine (static_cast<int> (gridArea.getX() + i * keyW), static_cast<float> (gridArea.getY()), static_cast<float> (gridArea.getBottom()));
@@ -1064,9 +1148,9 @@ void KeyMapperComponent::paint (juce::Graphics& g)
 
     if (visibleZones == 0)
     {
-        g.setColour (juce::Colour (0xff78849b));
+        g.setColour (juce::Colour (0xff9aa4b5));
         g.setFont (11.0f);
-        g.drawText ("Drag & Drop WAV/AIFF onto any key | Box-drag to multi-select | Right-Click key = Root",
+        g.drawText ("Drop WAV/AIFF onto Key Map | Box-drag to select | Right-Click key = Root",
                     gridArea, juce::Justification::centred);
     }
 
@@ -1082,9 +1166,9 @@ void KeyMapperComponent::paint (juce::Graphics& g)
         auto r = getZoneRect (z, gridArea);
         bool isSelected = (! readOnly && selectedZoneIndices.count (i) > 0) || (readOnly && i == processor.selectedZoneIndex);
 
-        g.setColour (z.colour.withAlpha (isSelected ? 0.82f : 0.60f));
+        g.setColour (isSelected ? juce::Colour (0x66ffffff) : juce::Colour (0x2effffff));
         g.fillRect (r);
-        g.setColour (isSelected ? juce::Colours::white : z.colour.brighter (0.25f));
+        g.setColour (isSelected ? juce::Colours::white : juce::Colour (0xffd5dbe5));
         g.drawRect (r, isSelected ? 2.0f : 1.0f);
 
         juce::String label = z.name;
@@ -1099,8 +1183,8 @@ void KeyMapperComponent::paint (juce::Graphics& g)
         auto mr = juce::Rectangle<float>::leftTopRightBottom (
             std::min (marqueeStart.x, marqueeCurrent.x), std::min (marqueeStart.y, marqueeCurrent.y),
             std::max (marqueeStart.x, marqueeCurrent.x), std::max (marqueeStart.y, marqueeCurrent.y));
-        g.setColour (juce::Colour (0x305aa9ff)); g.fillRect (mr);
-        g.setColour (juce::Colour (0xff80c4ff)); g.drawRect (mr, 1.2f);
+        g.setColour (juce::Colour (0x30ffffff)); g.fillRect (mr);
+        g.setColour (juce::Colours::white); g.drawRect (mr, 1.2f);
     }
 
     int activeNote = processor.lastPlayedNote.load();
@@ -1113,19 +1197,18 @@ void KeyMapperComponent::paint (juce::Graphics& g)
         juce::Rectangle<float> kr (keyArea.getX() + i * keyW, static_cast<float> (keyArea.getY()), keyW, static_cast<float> (keyArea.getHeight()));
 
         bool isKs = processor.isKeyswitchNote (note);
-        juce::Colour mappedCol = juce::Colours::transparentBlack;
         bool isMapped = false;
         for (const auto& z : processor.zones)
-            if (isZoneVisibleInMapper (z) && note >= z.lowKey && note <= z.highKey) { mappedCol = z.colour; isMapped = true; }
+            if (isZoneVisibleInMapper (z) && note >= z.lowKey && note <= z.highKey) isMapped = true;
 
         if (note == pressedKey || note == activeNote) g.setColour (juce::Colours::white);
-        else if (isKs) g.setColour (note == activeKs ? juce::Colour (0xffff3b3b) : juce::Colour (0xffb82525));
-        else if (! readOnly && note == selectedRootKey) g.setColour (juce::Colour (0xffffd32a));
-        else if (isMapped) g.setColour (isBlack ? mappedCol.darker (0.35f) : mappedCol);
-        else g.setColour (isBlack ? juce::Colour (0xff151921) : juce::Colour (0xffd8e0eb));
+        else if (isKs) g.setColour (note == activeKs ? juce::Colour (0xfff2f4f8) : juce::Colour (0xff8c95a6));
+        else if (! readOnly && note == selectedRootKey) g.setColour (juce::Colour (0xffffffff));
+        else if (isMapped) g.setColour (isBlack ? juce::Colour (0xff8c95a6) : juce::Colour (0xfff2f4f8));
+        else g.setColour (isBlack ? juce::Colour (0xff111318) : juce::Colour (0xffd5dbe5));
 
         g.fillRect (kr);
-        g.setColour (juce::Colour (0xff272e3a));
+        g.setColour (juce::Colour (0xff090a0c));
         g.drawRect (kr, 0.5f);
 
         if (! readOnly && note == selectedRootKey)
@@ -1136,7 +1219,7 @@ void KeyMapperComponent::paint (juce::Graphics& g)
         }
         if (n == 0)
         {
-            g.setColour ((isMapped || isKs) ? juce::Colours::white : juce::Colours::darkgrey);
+            g.setColour (isBlack ? juce::Colour (0xffcfd5df) : juce::Colour (0xff121418));
             g.setFont (7.5f);
             g.drawText ("C" + juce::String (note / 12), kr.expanded (5.0f, 0.0f), juce::Justification::centredBottom, false);
         }
@@ -1324,14 +1407,14 @@ WaveEditorComponent::WaveEditorComponent (RythmeAudioProcessor& p) : processor (
 void WaveEditorComponent::paint (juce::Graphics& g)
 {
     auto area = getLocalBounds();
-    g.fillAll (juce::Colour (0xff121720));
-    g.setColour (juce::Colour (0xff2e3748));
+    g.fillAll (juce::Colour (0xff090a0c));
+    g.setColour (juce::Colour (0xffe6e9ef));
     g.drawRect (area, 1);
 
     const juce::ScopedLock sl (processor.zoneLock);
     if (processor.zones.empty() || processor.selectedZoneIndex < 0 || processor.selectedZoneIndex >= static_cast<int> (processor.zones.size()))
     {
-        g.setColour (juce::Colour (0xff78849b)); g.setFont (11.0f);
+        g.setColour (juce::Colour (0xff9aa4b5)); g.setFont (11.0f);
         g.drawText ("Drop WAV/AIFF onto Key Map, or drop here to add Round Robin layers", area, juce::Justification::centred);
         return;
     }
@@ -1339,7 +1422,7 @@ void WaveEditorComponent::paint (juce::Graphics& g)
     const auto& z = processor.zones[static_cast<size_t> (processor.selectedZoneIndex)];
     if (z.layers.empty())
     {
-        g.setColour (z.colour.brighter (0.3f)); g.setFont (11.0f);
+        g.setColour (juce::Colour (0xfff2f4f8)); g.setFont (11.0f);
         g.drawText ("Drop WAV/AIFF sample(s) here!", area, juce::Justification::centred);
         return;
     }
@@ -1358,13 +1441,13 @@ void WaveEditorComponent::paint (juce::Graphics& g)
     float fadeInX = startX + z.fadeInNorm * spanW;
     float fadeOutX = endX - z.fadeOutNorm * spanW;
 
-    g.setColour (juce::Colour (0x55000000));
+    g.setColour (juce::Colour (0x66000000));
     g.fillRect (static_cast<float> (area.getX()), static_cast<float> (area.getY()), startX - area.getX(), static_cast<float> (area.getHeight()));
     g.fillRect (endX, static_cast<float> (area.getY()), area.getRight() - endX, static_cast<float> (area.getHeight()));
 
     if (z.sampleLoop && lEndX > lStartX)
     {
-        g.setColour (juce::Colour (0x334cc98f));
+        g.setColour (juce::Colour (0x28ffffff));
         g.fillRect (lStartX, static_cast<float> (area.getY()), lEndX - lStartX, static_cast<float> (area.getHeight()));
     }
 
@@ -1378,37 +1461,30 @@ void WaveEditorComponent::paint (juce::Graphics& g)
         int idx = std::min (numSamples - 1, x * step);
         p.lineTo (static_cast<float> (area.getX() + x), midY - data[idx] * halfH);
     }
-    g.setColour (z.colour.brighter (0.25f));
+    g.setColour (juce::Colour (0xfff2f4f8));
     g.strokePath (p, juce::PathStrokeType (1.2f));
 
     float topLineY = midY - halfH;
     if (z.fadeInNorm > 0.001f)
-    {
-        g.setColour (juce::Colour (0xffffd32a));
         g.drawLine (startX, midY, fadeInX, topLineY, 1.5f);
-    }
     if (z.fadeOutNorm > 0.001f)
-    {
-        g.setColour (juce::Colour (0xffffd32a));
         g.drawLine (fadeOutX, topLineY, endX, midY, 1.5f);
-    }
 
-    g.setColour (juce::Colour (0xffffd32a));
+    g.setColour (juce::Colours::white);
     g.fillEllipse (fadeInX - 5.0f, topLineY - 5.0f, 10.0f, 10.0f);
     g.fillEllipse (fadeOutX - 5.0f, topLineY - 5.0f, 10.0f, 10.0f);
 
-    g.setColour (juce::Colour (0xffff5599));
     g.drawVerticalLine (static_cast<int> (startX), static_cast<float> (area.getY()), static_cast<float> (area.getBottom()));
     g.drawVerticalLine (static_cast<int> (endX), static_cast<float> (area.getY()), static_cast<float> (area.getBottom()));
     g.fillRect (startX, static_cast<float> (area.getY()), 14.0f, 13.0f);
     g.fillRect (endX - 14.0f, static_cast<float> (area.getY()), 14.0f, 13.0f);
-    g.setColour (juce::Colours::white); g.setFont (9.0f);
+    g.setColour (juce::Colours::black); g.setFont (juce::FontOptions (9.0f, juce::Font::bold));
     g.drawText ("S", static_cast<int> (startX), area.getY(), 14, 13, juce::Justification::centred);
     g.drawText ("E", static_cast<int> (endX - 14.0f), area.getY(), 14, 13, juce::Justification::centred);
 
     if (z.sampleLoop)
     {
-        g.setColour (juce::Colour (0xff4cc98f));
+        g.setColour (juce::Colour (0xffcfd5df));
         g.drawVerticalLine (static_cast<int> (lStartX), static_cast<float> (area.getY()), static_cast<float> (area.getBottom()));
         g.drawVerticalLine (static_cast<int> (lEndX), static_cast<float> (area.getY()), static_cast<float> (area.getBottom()));
         g.fillRect (lStartX, static_cast<float> (area.getBottom() - 14), 20.0f, 14.0f);
@@ -1507,8 +1583,8 @@ float RhythmSequencerComponent::snapToGrid (float normX) const
 void RhythmSequencerComponent::paint (juce::Graphics& g)
 {
     auto area = getLocalBounds();
-    g.fillAll (juce::Colour (0xff1a1521));
-    g.setColour (juce::Colour (0xff3a2d47));
+    g.fillAll (juce::Colour (0xff0c0d10));
+    g.setColour (juce::Colour (0xffe6e9ef));
     g.drawRect (area, 1);
 
     int divs = processor.getGridDivisions();
@@ -1516,24 +1592,20 @@ void RhythmSequencerComponent::paint (juce::Graphics& g)
     for (int i = 0; i < divs; ++i)
     {
         float x = area.getX() + (i / static_cast<float> (divs)) * area.getWidth();
-        g.setColour (i % beatStep == 0 ? juce::Colour (0xff524066) : juce::Colour (0xff2b2135));
+        g.setColour (i % beatStep == 0 ? juce::Colour (0xff474e5c) : juce::Colour (0xff1d2026));
         g.drawVerticalLine (static_cast<int> (x), static_cast<float> (area.getY()), static_cast<float> (area.getBottom()));
     }
 
-    if (! processor.seqBypass.load() && processor.apvts.getRawParameterValue ("seqLoop")->load() > 0.5f)
+    if (processor.apvts.getRawParameterValue ("seqLoop")->load() > 0.5f)
     {
         float px = area.getX() + processor.seqPlayheadNorm.load() * area.getWidth();
-        g.setColour (juce::Colour (0x99ffffff));
+        g.setColour (juce::Colour (0xb3ffffff));
         g.drawVerticalLine (static_cast<int> (px), static_cast<float> (area.getY()), static_cast<float> (area.getBottom()));
     }
 
     const juce::ScopedLock sl (processor.zoneLock);
     if (processor.zones.empty() || processor.selectedZoneIndex < 0 || processor.selectedZoneIndex >= static_cast<int> (processor.zones.size()))
-    {
-        g.setColour (juce::Colour (0xff8a7a99)); g.setFont (11.0f);
-        g.drawText ("Select a key or item to edit rhythm | Turn ON LOOP & press PLAY or Spacebar", area, juce::Justification::centred);
         return;
-    }
 
     const auto& z = processor.zones[static_cast<size_t> (processor.selectedZoneIndex)];
     for (int i = 0; i < static_cast<int> (z.seqEvents.size()); ++i)
@@ -1542,14 +1614,11 @@ void RhythmSequencerComponent::paint (juce::Graphics& g)
         float cx = area.getX() + ev.position * area.getWidth();
         float barH = ev.velocity * (area.getHeight() - 18.0f);
         float topY = area.getBottom() - 9.0f - barH;
-        g.setColour (i == draggedEventIdx ? juce::Colours::white : z.colour);
+        g.setColour (i == draggedEventIdx ? juce::Colours::white : juce::Colour (0xffe6e9ef));
         g.drawLine (cx, static_cast<float> (area.getBottom() - 9), cx, topY, 3.2f);
         g.fillEllipse (cx - 4.5f, static_cast<float> (area.getBottom() - 13.5f), 9.0f, 9.0f);
         g.fillEllipse (cx - 3.5f, topY - 3.5f, 7.0f, 7.0f);
     }
-
-    g.setColour (z.colour.brighter (0.4f)); g.setFont (10.0f);
-    g.drawText ("Pattern: " + z.name + "  |  Click=Add  Drag=Move/Vel  RightClick=Del", area.reduced (6, 3), juce::Justification::topRight, true);
 }
 
 void RhythmSequencerComponent::mouseDown (const juce::MouseEvent& e)
@@ -1599,12 +1668,32 @@ void RhythmSequencerComponent::mouseDrag (const juce::MouseEvent& e)
 
 void RhythmSequencerComponent::mouseUp (const juce::MouseEvent&) { draggedEventIdx = -1; repaint(); }
 
-// ---------------- LayoutCustomizeOverlay (Exact Coordinate Mapping + 20x Default Grid) ----------------
-LayoutCustomizeOverlay::LayoutCustomizeOverlay() {}
+// ---------------- LayoutCustomizeOverlay ----------------
+LayoutCustomizeOverlay::LayoutCustomizeOverlay (std::function<void(const juce::String&)> onDeleteKey)
+    : onDeleteCallback (std::move (onDeleteKey)) {}
 
 void LayoutCustomizeOverlay::setTargets (std::vector<TargetEntry> items)
 {
     targets = std::move (items);
+    repaint();
+}
+
+void LayoutCustomizeOverlay::deleteSelectedOrMarked()
+{
+    if (activeIdx >= 0 && activeIdx < static_cast<int> (targets.size()))
+    {
+        const auto& t = targets[static_cast<size_t> (activeIdx)];
+        pendingDeleteKeys.insert (t.key);
+        if (t.comp != nullptr) t.comp->setVisible (false);
+        if (onDeleteCallback) onDeleteCallback (t.key);
+        activeIdx = -1;
+        repaint();
+    }
+}
+
+void LayoutCustomizeOverlay::clearPendingDeletes()
+{
+    pendingDeleteKeys.clear();
     repaint();
 }
 
@@ -1616,11 +1705,13 @@ int LayoutCustomizeOverlay::snap (int v) const
 
 void LayoutCustomizeOverlay::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0x240a0e14));
+    juce::Graphics::ScopedSaveState sss (g);
+    g.reduceClipRegion (getLocalBounds());
+    g.fillAll (juce::Colour (0x24000000));
 
     if (gridStepPx > 1)
     {
-        g.setColour (juce::Colour (0x365aa9ff));
+        g.setColour (juce::Colour (0x34ffffff));
         for (int x = gridStepPx; x < getWidth(); x += gridStepPx)
             g.drawVerticalLine (x, 0.0f, static_cast<float> (getHeight()));
         for (int y = gridStepPx; y < getHeight(); y += gridStepPx)
@@ -1629,24 +1720,27 @@ void LayoutCustomizeOverlay::paint (juce::Graphics& g)
 
     for (size_t i = 0; i < targets.size(); ++i)
     {
-        auto* c = targets[i].comp;
+        const auto& t = targets[i];
+        auto* c = t.comp;
         if (c == nullptr || ! c->isVisible() || c->getParentComponent() == nullptr) continue;
+        if (pendingDeleteKeys.count (t.key) > 0) continue;
 
         auto b = getLocalArea (c->getParentComponent(), c->getBounds()).toFloat();
-        if (! getLocalBounds().toFloat().intersects (b)) continue;
+        auto clipped = b.getIntersection (getLocalBounds().toFloat());
+        if (clipped.isEmpty()) continue;
 
         bool selected = (static_cast<int> (i) == activeIdx);
-        g.setColour (selected ? juce::Colour (0x34ffff66) : juce::Colour (0x1a4ca3ff));
-        g.fillRect (b);
-        g.setColour (selected ? juce::Colour (0xffffd32a) : juce::Colour (0xff5aa9ff));
-        g.drawRect (b, 1.4f);
+        g.setColour (selected ? juce::Colour (0x34ffffff) : juce::Colour (0x14ffffff));
+        g.fillRect (clipped);
+        g.setColour (selected ? juce::Colours::white : juce::Colour (0xffcfd5df));
+        g.drawRect (clipped, 1.3f);
 
         juce::Path corner;
-        corner.startNewSubPath (b.getRight() - 9.0f, b.getBottom());
-        corner.lineTo (b.getRight(), b.getBottom() - 9.0f);
-        corner.lineTo (b.getRight(), b.getBottom());
+        corner.startNewSubPath (clipped.getRight() - 8.0f, clipped.getBottom());
+        corner.lineTo (clipped.getRight(), clipped.getBottom() - 8.0f);
+        corner.lineTo (clipped.getRight(), clipped.getBottom());
         corner.closeSubPath();
-        g.setColour (juce::Colour (0xffffd32a));
+        g.setColour (juce::Colours::white);
         g.fillPath (corner);
     }
 }
@@ -1657,8 +1751,10 @@ void LayoutCustomizeOverlay::mouseDown (const juce::MouseEvent& e)
     isResizing = false;
     for (int i = static_cast<int> (targets.size()) - 1; i >= 0; --i)
     {
-        auto* c = targets[static_cast<size_t> (i)].comp;
+        const auto& t = targets[static_cast<size_t> (i)];
+        auto* c = t.comp;
         if (c == nullptr || ! c->isVisible() || c->getParentComponent() == nullptr) continue;
+        if (pendingDeleteKeys.count (t.key) > 0) continue;
 
         auto b = getLocalArea (c->getParentComponent(), c->getBounds());
         if (b.contains (e.getPosition()))
@@ -1711,151 +1807,89 @@ void LayoutCustomizeOverlay::mouseUp (const juce::MouseEvent&)
 void MainPluginView::applyAllStyles()
 {
     int fStyle = juce::jlimit (1, 10, audioProcessor.faderStyleId);
+    auto fCol = RythmeAudioProcessor::getPaletteColour (audioProcessor.faderColourIdx);
     StyledHorizontalFader* allFaders[] = {
         &shuffleFader, &timeRandFader, &velRandFader,
-        &crossfadeFader, &fxP1, &fxP2, &fxP3, &fxP4, &fxP5
+        &grpVolFader, &crossfadeFader,
+        &fxP1, &fxP2, &fxP3, &fxP4, &fxP5
     };
     for (auto* hf : allFaders)
-        hf->setStyleId (fStyle);
+        hf->setStyleAndColour (fStyle, fCol);
 
-    grpPanFader.setStyleId (fStyle);
-    panFader.setStyleId (fStyle);
+    grpPanFader.setStyleAndColour (fStyle, fCol);
+    panFader.setStyleAndColour (fStyle, fCol);
 
     int kStyle = juce::jlimit (1, 10, audioProcessor.knobStyleId);
+    auto kCol = RythmeAudioProcessor::getPaletteColour (audioProcessor.knobColourIdx);
     DragTypeNumberBox* allBoxes[] = {
-        &bpmBox, &grpVolBox, &pitchBox, &volBox,
+        &bpmBox, &pitchBox, &volBox,
         &attackBox, &decayBox, &sustainBox, &releaseBox
     };
     for (auto* bx : allBoxes)
-        bx->setStyleId (kStyle);
+        bx->setStyleAndColour (kStyle, kCol);
 
     int sStyle = juce::jlimit (1, 10, audioProcessor.switchStyleId);
-    groupMuteBtn.setStyleId    (sStyle, juce::Colour (0xffee5253));
-    groupSoloBtn.setStyleId    (sStyle, juce::Colour (0xffe8a138));
-    selGroupOnlyBtn.setStyleId (sStyle, juce::Colour (0xff4cc98f));
-    frrBtn.setStyleId          (sStyle, juce::Colour (0xffff5599));
-    fvlBtn.setStyleId          (sStyle, juce::Colour (0xffa66cff));
-    pitchTrackBtn.setStyleId   (sStyle, juce::Colour (0xffe8a138));
-    realRRBtn.setStyleId       (sStyle, juce::Colour (0xff5aa9ff));
-    sampleLoopBtn.setStyleId   (sStyle, juce::Colour (0xff4cc98f));
-    autoLoopZeroBtn.setStyleId (sStyle, juce::Colour (0xff38c4d9));
-    reverseBtn.setStyleId      (sStyle, juce::Colour (0xffe04f8a));
-    fxEnableBtn.setStyleId     (sStyle, juce::Colour (0xff4cc98f));
-    seqBypassBtn.setStyleId    (sStyle, juce::Colour (0xffee5253));
-    fxBypassBtn.setStyleId     (sStyle, juce::Colour (0xffee5253));
+    auto sCol = RythmeAudioProcessor::getPaletteColour (audioProcessor.switchColourIdx);
+    StyledSwitchButton* allSwitches[] = {
+        &playPauseBtn, &hostSyncBtn, &seqLoopBtn, &seqClearBtn,
+        &addGroupBtn, &delGroupBtn, &groupMuteBtn, &groupSoloBtn, &selGroupOnlyBtn,
+        &frrBtn, &fvlBtn, &pitchTrackBtn, &selectAllZonesBtn, &delZoneBtn, &autoGridBtn,
+        &wavePlayBtn, &realRRBtn, &sampleLoopBtn, &autoLoopZeroBtn, &reverseBtn, &normalizeBtn, &resetZoneBtn,
+        &fxBypassBtn, &fxEnableBtn,
+        &gearDeleteBtn, &gearResetBtn, &gearDoneBtn
+    };
+    for (auto* sw : allSwitches)
+        sw->setStyleAndColour (sStyle, sCol);
 
-    brandHeader.repaint();
+    titleScaleBtn.repaint();
+    presetBar.repaint();
     repaint();
 }
 
 MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(float)> onScaleSelected)
     : audioProcessor (p), scaleCallback (std::move (onScaleSelected)),
-      brandHeader (p, [this]() { showBrandAndScaleMenu(); }),
-      mountedCard ([this]()
-      {
-          audioProcessor.clearLoadedItemPanel();
-          mountedCard.setItem ("", false);
-          syncPerZoneControls();
-          repaintDynamicAreas();
-      }),
+      titleScaleBtn (p, onScaleSelected),
+      presetBar (p,
+                 [this]() { savePresetAction(); },
+                 [this] (const juce::File& f) { loadLibraryItem (f); },
+                 [this]() { chooseRootLibraryFolder(); }),
       mainWaveDisplay (p), seqComp (p), editKeyMapper (p), waveEditor (p),
-      adsrGraph (p), fxDisplay (p), bottomPiano (p)
+      adsrGraph (p), fxDisplay (p),
+      customizeOverlay ([this] (const juce::String& deletedKey)
+      {
+          if (activeTab == ActiveTab::Main) mainHiddenKeys.insert (deletedKey);
+          else editHiddenKeys.insert (deletedKey);
+      }),
+      bottomPiano (p)
 {
-    addAndMakeVisible (brandHeader);
+    addAndMakeVisible (titleScaleBtn);
+    addAndMakeVisible (presetBar);
 
-    addAndMakeVisible (addLibBtn);
-    addAndMakeVisible (sortAzBtn);
-    addAndMakeVisible (delLibBtn);
-    addAndMakeVisible (libraryList);
-    libraryList.setModel (this);
-    libraryList.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xff131720));
-
-    addLibBtn.onClick = [this]()
+    addAndMakeVisible (editModeBtn);
+    editModeBtn.setTooltip ("Toggle EDIT Page");
+    editModeBtn.onClick = [this]()
     {
-        fileChooser = std::make_unique<juce::FileChooser> ("Select Sample/Library Folder (e.g. DRUMS)",
-            juce::File::getSpecialLocation (juce::File::userDocumentsDirectory));
-        fileChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
-            [this] (const juce::FileChooser& fc)
-            {
-                if (fc.getResult().isDirectory())
-                {
-                    audioProcessor.addLibraryFolderPersistent (fc.getResult());
-                    rebuildLibraryRows();
-                }
-            });
+        setActiveTab (editModeBtn.getToggleState() ? ActiveTab::Edit : ActiveTab::Main);
     };
-
-    sortAzBtn.onClick = [this]()
-    {
-        audioProcessor.sortLibraryPersistent();
-        rebuildLibraryRows();
-    };
-
-    delLibBtn.onClick = [this]()
-    {
-        int row = libraryList.getSelectedRow();
-        if (row >= 0 && row < static_cast<int> (visibleLibRows.size()))
-        {
-            const auto& vr = visibleLibRows[static_cast<size_t> (row)];
-            if (vr.catIdx >= 0)
-            {
-                audioProcessor.removeLibraryEntryPersistent (vr.catIdx);
-                rebuildLibraryRows();
-            }
-        }
-    };
-
-    addAndMakeVisible (tabMainBtn);
-    addAndMakeVisible (tabEditBtn);
-    tabMainBtn.onClick = [this]() { setActiveTab (ActiveTab::Main); };
-    tabEditBtn.onClick = [this]() { setActiveTab (ActiveTab::Edit); };
-
-    addAndMakeVisible (presetNameBox);
-    presetNameBox.setMultiLine (false);
-    presetNameBox.setJustification (juce::Justification::centred);
-    presetNameBox.setText (audioProcessor.currentPresetName, juce::dontSendNotification);
-    presetNameBox.setTextToShowWhenEmpty ("---", juce::Colour (0xff5c677d));
-    presetNameBox.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff161c26));
-    presetNameBox.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff3c4960));
-    presetNameBox.setColour (juce::TextEditor::textColourId, juce::Colours::white);
-    presetNameBox.onTextChange = [this]() { audioProcessor.currentPresetName = presetNameBox.getText().trim(); };
-
-    addAndMakeVisible (saveBtn);
-    addAndMakeVisible (saveAsBtn);
-    saveBtn.onClick = [this]()
-    {
-        audioProcessor.currentPresetName = presetNameBox.getText().trim();
-        if (audioProcessor.currentPresetFile != juce::File()) audioProcessor.savePresetMn6x (audioProcessor.currentPresetFile);
-        else saveAsDialog();
-    };
-    saveAsBtn.onClick = [this]() { saveAsDialog(); };
 
     addAndMakeVisible (topGearBtn);
-    topGearBtn.setTooltip ("Customize Page Layout & Styles");
+    topGearBtn.setTooltip ("Customize Layout, Styles & Colours");
     topGearBtn.onClick = [this]() { enterLayoutCustomizeMode (! layoutEditMode); };
 
     // ---------------- MAIN TAB ----------------
-    addAndMakeVisible (mountedCard);
-    mountedCard.setItem (audioProcessor.loadedItemName, audioProcessor.loadedItemActive);
-
     addAndMakeVisible (mainWaveDisplay);
 
     rhythmSeqHeaderLbl.setText ("RHYTHM SEQUENCER", juce::dontSendNotification);
     rhythmSeqHeaderLbl.setFont (juce::FontOptions (12.0f, juce::Font::bold));
-    rhythmSeqHeaderLbl.setColour (juce::Label::textColourId, juce::Colour (0xffc9d4e8));
+    rhythmSeqHeaderLbl.setColour (juce::Label::textColourId, juce::Colour (0xfff2f4f8));
     addAndMakeVisible (rhythmSeqHeaderLbl);
-
-    addAndMakeVisible (seqBypassBtn);
-    seqBypassBtn.onClick = [this]() { audioProcessor.seqBypass.store (seqBypassBtn.getToggleState()); };
 
     addAndMakeVisible (seqComp);
 
     addAndMakeVisible (playPauseBtn);
-    playPauseBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff273549));
     playPauseBtn.onClick = [this]() { togglePlayPause(); };
 
     addAndMakeVisible (hostSyncBtn);
-    hostSyncBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xff4cc98f));
     hostSyncAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "hostSync", hostSyncBtn);
 
     addAndMakeVisible (bpmBox);
@@ -1890,7 +1924,7 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     gridLabel.setText ("Grid", juce::dontSendNotification);
     gridLabel.setJustificationType (juce::Justification::centred);
     gridLabel.setFont (juce::FontOptions (9.5f, juce::Font::bold));
-    gridLabel.setColour (juce::Label::textColourId, juce::Colour (0xffc9d4e8));
+    gridLabel.setColour (juce::Label::textColourId, juce::Colour (0xffe8ecf2));
     addAndMakeVisible (gridLabel);
 
     addAndMakeVisible (gridBox);
@@ -1899,11 +1933,9 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     gridBox.onChange = [this]() { seqComp.repaint(); };
 
     addAndMakeVisible (seqLoopBtn);
-    seqLoopBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xffe84ea2));
     seqLoopAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "seqLoop", seqLoopBtn);
 
     addAndMakeVisible (seqClearBtn);
-    seqClearBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff592836));
     seqClearBtn.onClick = [this]() { audioProcessor.clearSelectedZoneRhythm(); seqComp.repaint(); };
 
     // ---------------- EDIT TAB ----------------
@@ -1912,7 +1944,6 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     editViewport.setScrollBarsShown (true, false);
 
     editContent.addAndMakeVisible (addGroupBtn);
-    addGroupBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2b3c54));
     addGroupBtn.onClick = [this]()
     {
         audioProcessor.createEmptyGroup();
@@ -1920,7 +1951,6 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     };
 
     editContent.addAndMakeVisible (delGroupBtn);
-    delGroupBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff6b2938));
     delGroupBtn.onClick = [this]()
     {
         if (audioProcessor.deleteSelectedGroup())
@@ -1943,9 +1973,9 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
 
     editContent.addAndMakeVisible (groupNameEdit);
     groupNameEdit.setMultiLine (false);
-    groupNameEdit.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff141922));
-    groupNameEdit.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff3c4960));
-    groupNameEdit.setColour (juce::TextEditor::textColourId, juce::Colours::white);
+    groupNameEdit.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff0a0b0d));
+    groupNameEdit.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xffcfd5df));
+    groupNameEdit.setColour (juce::TextEditor::textColourId, juce::Colour (0xfff2f4f8));
     auto applyGroupName = [this]()
     {
         const juce::ScopedLock sl (audioProcessor.zoneLock);
@@ -1996,8 +2026,8 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
         bottomPiano.repaint();
     };
 
-    editContent.addAndMakeVisible (grpVolBox);
-    grpVolBox.onValueChanged = [this] (double v)
+    editContent.addAndMakeVisible (grpVolFader);
+    grpVolFader.onValueChanged = [this] (double v)
     {
         const juce::ScopedLock sl (audioProcessor.zoneLock);
         if (audioProcessor.selectedGroupIndex >= 0 && audioProcessor.selectedGroupIndex < static_cast<int> (audioProcessor.groups.size()))
@@ -2022,15 +2052,12 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     pitchTrackAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "pitchTrack", pitchTrackBtn);
 
     editContent.addAndMakeVisible (selectAllZonesBtn);
-    selectAllZonesBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff232b38));
     selectAllZonesBtn.onClick = [this]() { editKeyMapper.selectAllZones(); };
 
     editContent.addAndMakeVisible (delZoneBtn);
-    delZoneBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff6b2938));
     delZoneBtn.onClick = [this]() { deleteSelectedInEditTab(); };
 
     editContent.addAndMakeVisible (autoGridBtn);
-    autoGridBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2b3c54));
     autoGridBtn.onClick = [this]() { editKeyMapper.autoGridSelectedZones(); };
 
     editContent.addAndMakeVisible (velGridBox);
@@ -2046,7 +2073,7 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     editContent.addAndMakeVisible (zoneColourBox);
     for (int c = 0; c < RythmeAudioProcessor::numPaletteColours; ++c)
         zoneColourBox.addItem (RythmeAudioProcessor::getPaletteColourName (c), c + 1);
-    zoneColourBox.setSelectedId (1, juce::dontSendNotification);
+    zoneColourBox.setSelectedId (12, juce::dontSendNotification);
     zoneColourBox.onChange = [this]()
     {
         int cIdx = zoneColourBox.getSelectedId() - 1;
@@ -2067,7 +2094,6 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     editContent.addAndMakeVisible (editKeyMapper);
 
     editContent.addAndMakeVisible (wavePlayBtn);
-    wavePlayBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff27473b));
     wavePlayBtn.onClick = [this]()
     {
         const juce::ScopedLock sl (audioProcessor.zoneLock);
@@ -2142,11 +2168,9 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     };
 
     editContent.addAndMakeVisible (normalizeBtn);
-    normalizeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2b3c54));
     normalizeBtn.onClick = [this]() { audioProcessor.normalizeSelectedSample(); waveEditor.repaint(); };
 
     editContent.addAndMakeVisible (resetZoneBtn);
-    resetZoneBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff3b334a));
     resetZoneBtn.onClick = [this]()
     {
         audioProcessor.resetSelectedZoneDefaults(); syncPerZoneControls(); waveEditor.repaint(); adsrGraph.repaint();
@@ -2280,10 +2304,10 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
         };
     }
 
-    // ---------------- TOP-RIGHT GEAR INLINE CUSTOMIZE TOOLBAR (Default Grid 20x!) ----------------
+    // ---------------- TOP-RIGHT GEAR TOOLBAR ----------------
     addChildComponent (gearGridBox);
     gearGridBox.addItemList ({ "Grid: Free", "Grid: 10x", "Grid: 20x", "Grid: 30x", "Grid: 40x", "Grid: 50x" }, 1);
-    gearGridBox.setSelectedId (3, juce::dontSendNotification); // Default 20x!
+    gearGridBox.setSelectedId (3, juce::dontSendNotification);
     customizeOverlay.setGridStep (20);
     gearGridBox.onChange = [this]()
     {
@@ -2291,17 +2315,8 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
         customizeOverlay.setGridStep (id <= 1 ? 0 : (id - 1) * 10);
     };
 
-    addChildComponent (gearKnobStyleBox);
-    for (int i = 1; i <= 10; ++i) gearKnobStyleBox.addItem ("Knob Style " + juce::String (i), i);
-    gearKnobStyleBox.setSelectedId (audioProcessor.knobStyleId, juce::dontSendNotification);
-    gearKnobStyleBox.onChange = [this]()
-    {
-        audioProcessor.knobStyleId = juce::jlimit (1, 10, gearKnobStyleBox.getSelectedId());
-        applyAllStyles();
-    };
-
     addChildComponent (gearFaderStyleBox);
-    for (int i = 1; i <= 10; ++i) gearFaderStyleBox.addItem ("Fader Style " + juce::String (i), i);
+    for (int i = 1; i <= 10; ++i) gearFaderStyleBox.addItem ("Fdr St " + juce::String (i), i);
     gearFaderStyleBox.setSelectedId (audioProcessor.faderStyleId, juce::dontSendNotification);
     gearFaderStyleBox.onChange = [this]()
     {
@@ -2309,8 +2324,37 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
         applyAllStyles();
     };
 
+    addChildComponent (gearFaderColBox);
+    for (int c = 0; c < RythmeAudioProcessor::numPaletteColours; ++c)
+        gearFaderColBox.addItem ("Fdr: " + RythmeAudioProcessor::getPaletteColourName (c), c + 1);
+    gearFaderColBox.setSelectedId (audioProcessor.faderColourIdx + 1, juce::dontSendNotification);
+    gearFaderColBox.onChange = [this]()
+    {
+        audioProcessor.faderColourIdx = juce::jlimit (0, RythmeAudioProcessor::numPaletteColours - 1, gearFaderColBox.getSelectedId() - 1);
+        applyAllStyles();
+    };
+
+    addChildComponent (gearKnobStyleBox);
+    for (int i = 1; i <= 10; ++i) gearKnobStyleBox.addItem ("Knb St " + juce::String (i), i);
+    gearKnobStyleBox.setSelectedId (audioProcessor.knobStyleId, juce::dontSendNotification);
+    gearKnobStyleBox.onChange = [this]()
+    {
+        audioProcessor.knobStyleId = juce::jlimit (1, 10, gearKnobStyleBox.getSelectedId());
+        applyAllStyles();
+    };
+
+    addChildComponent (gearKnobColBox);
+    for (int c = 0; c < RythmeAudioProcessor::numPaletteColours; ++c)
+        gearKnobColBox.addItem ("Knb: " + RythmeAudioProcessor::getPaletteColourName (c), c + 1);
+    gearKnobColBox.setSelectedId (audioProcessor.knobColourIdx + 1, juce::dontSendNotification);
+    gearKnobColBox.onChange = [this]()
+    {
+        audioProcessor.knobColourIdx = juce::jlimit (0, RythmeAudioProcessor::numPaletteColours - 1, gearKnobColBox.getSelectedId() - 1);
+        applyAllStyles();
+    };
+
     addChildComponent (gearSwitchStyleBox);
-    for (int i = 1; i <= 10; ++i) gearSwitchStyleBox.addItem ("Switch Style " + juce::String (i), i);
+    for (int i = 1; i <= 10; ++i) gearSwitchStyleBox.addItem ("Sw St " + juce::String (i), i);
     gearSwitchStyleBox.setSelectedId (audioProcessor.switchStyleId, juce::dontSendNotification);
     gearSwitchStyleBox.onChange = [this]()
     {
@@ -2318,64 +2362,45 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
         applyAllStyles();
     };
 
+    addChildComponent (gearSwitchColBox);
+    for (int c = 0; c < RythmeAudioProcessor::numPaletteColours; ++c)
+        gearSwitchColBox.addItem ("Sw: " + RythmeAudioProcessor::getPaletteColourName (c), c + 1);
+    gearSwitchColBox.setSelectedId (audioProcessor.switchColourIdx + 1, juce::dontSendNotification);
+    gearSwitchColBox.onChange = [this]()
+    {
+        audioProcessor.switchColourIdx = juce::jlimit (0, RythmeAudioProcessor::numPaletteColours - 1, gearSwitchColBox.getSelectedId() - 1);
+        applyAllStyles();
+    };
+
+    addChildComponent (gearDeleteBtn);
+    gearDeleteBtn.onClick = [this]() { customizeOverlay.deleteSelectedOrMarked(); };
+
     addChildComponent (gearResetBtn);
-    gearResetBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff6b2938));
     gearResetBtn.onClick = [this]()
     {
-        if (activeTab == ActiveTab::Main) mainCustomBounds.clear();
-        else editCustomBounds.clear();
+        if (activeTab == ActiveTab::Main)
+        {
+            mainCustomBounds.clear();
+            mainHiddenKeys.clear();
+        }
+        else
+        {
+            editCustomBounds.clear();
+            editHiddenKeys.clear();
+        }
+        customizeOverlay.clearPendingDeletes();
         resized();
+        if (layoutEditMode) enterLayoutCustomizeMode (true);
         customizeOverlay.repaint();
     };
 
     addChildComponent (gearDoneBtn);
-    gearDoneBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2d7a56));
     gearDoneBtn.onClick = [this]() { enterLayoutCustomizeMode (false); };
 
     addChildComponent (customizeOverlay);
 
-    // ---------------- LOGO/TITLE -> SETTINGS PANEL ----------------
-    addChildComponent (brandShapeBox);
-    brandShapeBox.addItemList ({ "Logo: Shield", "Logo: Pill", "Logo: Hex", "Logo: Circle" }, 1);
-    brandShapeBox.setSelectedId (audioProcessor.logoStyleId, juce::dontSendNotification);
-
-    addChildComponent (brandColourBox);
-    for (int c = 0; c < RythmeAudioProcessor::numPaletteColours; ++c)
-        brandColourBox.addItem (RythmeAudioProcessor::getPaletteColourName (c), c + 1);
-    brandColourBox.setSelectedId (audioProcessor.logoColourIdx + 1, juce::dontSendNotification);
-
-    addChildComponent (brandLettersEdit);
-    brandLettersEdit.setMultiLine (false);
-    brandLettersEdit.setText (audioProcessor.brandLetters, juce::dontSendNotification);
-    brandLettersEdit.setTextToShowWhenEmpty ("N6", juce::Colour (0xff6d7b94));
-    brandLettersEdit.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff141922));
-    brandLettersEdit.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff3c4960));
-    brandLettersEdit.setColour (juce::TextEditor::textColourId, juce::Colours::white);
-
-    addChildComponent (brandTitleEdit);
-    brandTitleEdit.setMultiLine (false);
-    brandTitleEdit.setText (audioProcessor.pluginTitleText, juce::dontSendNotification);
-    brandTitleEdit.setTextToShowWhenEmpty ("RYTHME", juce::Colour (0xff6d7b94));
-    brandTitleEdit.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff141922));
-    brandTitleEdit.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff3c4960));
-    brandTitleEdit.setColour (juce::TextEditor::textColourId, juce::Colours::white);
-
-    addChildComponent (brandApplyBtn);
-    brandApplyBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2d7a56));
-    brandApplyBtn.onClick = [this]()
-    {
-        audioProcessor.logoStyleId = juce::jlimit (1, 4, brandShapeBox.getSelectedId());
-        audioProcessor.logoColourIdx = juce::jlimit (0, RythmeAudioProcessor::numPaletteColours - 1, brandColourBox.getSelectedId() - 1);
-        audioProcessor.brandLetters = brandLettersEdit.getText().trim().toUpperCase();
-        audioProcessor.pluginTitleText = brandTitleEdit.getText().trim();
-        brandSettingsVisible = false;
-        resized();
-        brandHeader.repaint();
-    };
-
     addAndMakeVisible (bottomPiano);
 
-    rebuildLibraryRows();
     refreshGroupBoxes();
     syncGroupControls();
     syncFxControls();
@@ -2384,78 +2409,141 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     syncPerZoneControls();
 }
 
+void MainPluginView::chooseRootLibraryFolder()
+{
+    auto startDir = audioProcessor.rootLibraryFolder.isDirectory()
+        ? audioProcessor.rootLibraryFolder
+        : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
+    fileChooser = std::make_unique<juce::FileChooser> ("Select Root Library Folder", startDir);
+    fileChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+        [this] (const juce::FileChooser& fc)
+        {
+            if (fc.getResult().isDirectory())
+                audioProcessor.setRootLibraryFolder (fc.getResult());
+        });
+}
+
+void MainPluginView::savePresetAction()
+{
+    if (audioProcessor.libraryNameText.trim().isEmpty())
+        audioProcessor.libraryNameText = "KINETIK";
+    audioProcessor.currentPresetName = audioProcessor.libraryNameText.trim();
+
+    if (audioProcessor.currentPresetFile != juce::File())
+    {
+        audioProcessor.savePresetMn6x (audioProcessor.currentPresetFile);
+        return;
+    }
+
+    auto baseDir = audioProcessor.rootLibraryFolder.isDirectory()
+        ? audioProcessor.rootLibraryFolder
+        : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
+    auto defaultFile = baseDir.getChildFile (audioProcessor.currentPresetName + ".mn6x");
+
+    fileChooser = std::make_unique<juce::FileChooser> ("Save Preset (.mn6x)", defaultFile, "*.mn6x");
+    fileChooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
+        [this] (const juce::FileChooser& fc)
+        {
+            auto f = fc.getResult();
+            if (f != juce::File())
+            {
+                if (! f.hasFileExtension (".mn6x")) f = f.withFileExtension (".mn6x");
+                audioProcessor.libraryNameText = f.getFileNameWithoutExtension();
+                audioProcessor.currentPresetName = audioProcessor.libraryNameText;
+                presetBar.refreshTextFromProcessor();
+                audioProcessor.savePresetMn6x (f);
+            }
+        });
+}
+
 void MainPluginView::saveCustomizedBoundsFromOverlay()
 {
     if (activeTab == ActiveTab::Main)
     {
-        mainCustomBounds["card"]    = mountedCard.getBounds();
-        mainCustomBounds["wave"]    = mainWaveDisplay.getBounds();
-        mainCustomBounds["seqHdr"]  = rhythmSeqHeaderLbl.getBounds();
-        mainCustomBounds["seqByp"]  = seqBypassBtn.getBounds();
-        mainCustomBounds["seq"]     = seqComp.getBounds();
-        mainCustomBounds["play"]    = playPauseBtn.getBounds();
-        mainCustomBounds["sync"]    = hostSyncBtn.getBounds();
-        mainCustomBounds["bpm"]     = bpmBox.getBounds();
-        mainCustomBounds["shuf"]    = shuffleFader.getBounds();
-        mainCustomBounds["trnd"]    = timeRandFader.getBounds();
-        mainCustomBounds["vrnd"]    = velRandFader.getBounds();
-        mainCustomBounds["grid"]    = gridBox.getBounds();
-        mainCustomBounds["loop"]    = seqLoopBtn.getBounds();
-        mainCustomBounds["clr"]     = seqClearBtn.getBounds();
+        for (const auto& k : customizeOverlay.getPendingDeleteKeys())
+            mainHiddenKeys.insert (k);
+        customizeOverlay.clearPendingDeletes();
+
+        auto saveIfVis = [this] (const juce::String& key, juce::Component& c)
+        {
+            if (mainHiddenKeys.count (key) == 0 && c.isVisible())
+                mainCustomBounds[key] = c.getBounds();
+        };
+        saveIfVis ("wave",   mainWaveDisplay);
+        saveIfVis ("seqHdr", rhythmSeqHeaderLbl);
+        saveIfVis ("seq",    seqComp);
+        saveIfVis ("play",   playPauseBtn);
+        saveIfVis ("sync",   hostSyncBtn);
+        saveIfVis ("bpm",    bpmBox);
+        saveIfVis ("shuf",   shuffleFader);
+        saveIfVis ("trnd",   timeRandFader);
+        saveIfVis ("vrnd",   velRandFader);
+        saveIfVis ("grid",   gridBox);
+        saveIfVis ("loop",   seqLoopBtn);
+        saveIfVis ("clr",    seqClearBtn);
     }
     else
     {
-        editCustomBounds["addGrp"]  = addGroupBtn.getBounds();
-        editCustomBounds["delGrp"]  = delGroupBtn.getBounds();
-        editCustomBounds["grpSel"]  = groupSelectBox.getBounds();
-        editCustomBounds["grpName"] = groupNameEdit.getBounds();
-        editCustomBounds["grpM"]    = groupMuteBtn.getBounds();
-        editCustomBounds["grpS"]    = groupSoloBtn.getBounds();
-        editCustomBounds["selGrp"]  = selGroupOnlyBtn.getBounds();
-        editCustomBounds["grpKs"]   = groupKsBox.getBounds();
-        editCustomBounds["grpVol"]  = grpVolBox.getBounds();
-        editCustomBounds["grpPan"]  = grpPanFader.getBounds();
+        for (const auto& k : customizeOverlay.getPendingDeleteKeys())
+            editHiddenKeys.insert (k);
+        customizeOverlay.clearPendingDeletes();
 
-        editCustomBounds["frr"]     = frrBtn.getBounds();
-        editCustomBounds["fvl"]     = fvlBtn.getBounds();
-        editCustomBounds["pitchT"]  = pitchTrackBtn.getBounds();
-        editCustomBounds["allZ"]    = selectAllZonesBtn.getBounds();
-        editCustomBounds["delZ"]    = delZoneBtn.getBounds();
-        editCustomBounds["autoG"]   = autoGridBtn.getBounds();
-        editCustomBounds["velG"]    = velGridBox.getBounds();
-        editCustomBounds["colZ"]    = zoneColourBox.getBounds();
-        editCustomBounds["mapper"]  = editKeyMapper.getBounds();
+        auto saveIfVis = [this] (const juce::String& key, juce::Component& c)
+        {
+            if (editHiddenKeys.count (key) == 0 && c.isVisible())
+                editCustomBounds[key] = c.getBounds();
+        };
+        saveIfVis ("addGrp",  addGroupBtn);
+        saveIfVis ("delGrp",  delGroupBtn);
+        saveIfVis ("grpSel",  groupSelectBox);
+        saveIfVis ("grpName", groupNameEdit);
+        saveIfVis ("grpM",    groupMuteBtn);
+        saveIfVis ("grpS",    groupSoloBtn);
+        saveIfVis ("selGrp",  selGroupOnlyBtn);
+        saveIfVis ("grpKs",   groupKsBox);
+        saveIfVis ("grpVol",  grpVolFader);
+        saveIfVis ("grpPan",  grpPanFader);
 
-        editCustomBounds["wPlay"]   = wavePlayBtn.getBounds();
-        editCustomBounds["trk"]     = trackSelectBox.getBounds();
-        editCustomBounds["rr"]      = realRRBtn.getBounds();
-        editCustomBounds["sLoop"]   = sampleLoopBtn.getBounds();
-        editCustomBounds["zCross"]  = autoLoopZeroBtn.getBounds();
-        editCustomBounds["rev"]     = reverseBtn.getBounds();
-        editCustomBounds["norm"]    = normalizeBtn.getBounds();
-        editCustomBounds["rstZ"]    = resetZoneBtn.getBounds();
-        editCustomBounds["waveEd"]  = waveEditor.getBounds();
-        editCustomBounds["xfade"]   = crossfadeFader.getBounds();
+        saveIfVis ("frr",     frrBtn);
+        saveIfVis ("fvl",     fvlBtn);
+        saveIfVis ("pitchT",  pitchTrackBtn);
+        saveIfVis ("allZ",    selectAllZonesBtn);
+        saveIfVis ("delZ",    delZoneBtn);
+        saveIfVis ("autoG",   autoGridBtn);
+        saveIfVis ("velG",    velGridBox);
+        saveIfVis ("colZ",    zoneColourBox);
+        saveIfVis ("mapper",  editKeyMapper);
 
-        editCustomBounds["pitch"]   = pitchBox.getBounds();
-        editCustomBounds["pan"]     = panFader.getBounds();
-        editCustomBounds["vol"]     = volBox.getBounds();
-        editCustomBounds["atk"]     = attackBox.getBounds();
-        editCustomBounds["dec"]     = decayBox.getBounds();
-        editCustomBounds["sus"]     = sustainBox.getBounds();
-        editCustomBounds["rel"]     = releaseBox.getBounds();
-        editCustomBounds["adsrG"]   = adsrGraph.getBounds();
+        saveIfVis ("wPlay",   wavePlayBtn);
+        saveIfVis ("trk",     trackSelectBox);
+        saveIfVis ("rr",      realRRBtn);
+        saveIfVis ("sLoop",   sampleLoopBtn);
+        saveIfVis ("zCross",  autoLoopZeroBtn);
+        saveIfVis ("rev",     reverseBtn);
+        saveIfVis ("norm",    normalizeBtn);
+        saveIfVis ("rstZ",    resetZoneBtn);
+        saveIfVis ("waveEd",  waveEditor);
+        saveIfVis ("xfade",   crossfadeFader);
 
-        editCustomBounds["fxSlot"]  = fxSlotSelectBox.getBounds();
-        editCustomBounds["fxType"]  = fxTypeBox.getBounds();
-        editCustomBounds["fxEn"]    = fxEnableBtn.getBounds();
-        editCustomBounds["fxByp"]   = fxBypassBtn.getBounds();
-        editCustomBounds["fxDisp"]  = fxDisplay.getBounds();
-        editCustomBounds["fxP1"]    = fxP1.getBounds();
-        editCustomBounds["fxP2"]    = fxP2.getBounds();
-        editCustomBounds["fxP3"]    = fxP3.getBounds();
-        editCustomBounds["fxP4"]    = fxP4.getBounds();
-        editCustomBounds["fxP5"]    = fxP5.getBounds();
+        saveIfVis ("pitch",   pitchBox);
+        saveIfVis ("pan",     panFader);
+        saveIfVis ("vol",     volBox);
+        saveIfVis ("atk",     attackBox);
+        saveIfVis ("dec",     decayBox);
+        saveIfVis ("sus",     sustainBox);
+        saveIfVis ("rel",     releaseBox);
+        saveIfVis ("adsrG",   adsrGraph);
+
+        saveIfVis ("fxSlot",  fxSlotSelectBox);
+        saveIfVis ("fxType",  fxTypeBox);
+        saveIfVis ("fxEn",    fxEnableBtn);
+        saveIfVis ("fxByp",   fxBypassBtn);
+        saveIfVis ("fxDisp",  fxDisplay);
+        saveIfVis ("fxP1",    fxP1);
+        saveIfVis ("fxP2",    fxP2);
+        saveIfVis ("fxP3",    fxP3);
+        saveIfVis ("fxP4",    fxP4);
+        saveIfVis ("fxP5",    fxP5);
     }
 }
 
@@ -2466,9 +2554,13 @@ void MainPluginView::enterLayoutCustomizeMode (bool enable)
 
     layoutEditMode = enable;
     gearGridBox.setVisible (enable);
-    gearKnobStyleBox.setVisible (enable);
     gearFaderStyleBox.setVisible (enable);
+    gearFaderColBox.setVisible (enable);
+    gearKnobStyleBox.setVisible (enable);
+    gearKnobColBox.setVisible (enable);
     gearSwitchStyleBox.setVisible (enable);
+    gearSwitchColBox.setVisible (enable);
+    gearDeleteBtn.setVisible (enable);
     gearResetBtn.setVisible (enable);
     gearDoneBtn.setVisible (enable);
     customizeOverlay.setVisible (enable);
@@ -2477,14 +2569,13 @@ void MainPluginView::enterLayoutCustomizeMode (bool enable)
 
     if (enable)
     {
+        customizeOverlay.clearPendingDeletes();
         std::vector<LayoutCustomizeOverlay::TargetEntry> list;
         if (activeTab == ActiveTab::Main)
         {
             list = {
-                { "card",   &mountedCard },
                 { "wave",   &mainWaveDisplay },
                 { "seqHdr", &rhythmSeqHeaderLbl },
-                { "seqByp", &seqBypassBtn },
                 { "seq",    &seqComp },
                 { "play",   &playPauseBtn },
                 { "sync",   &hostSyncBtn },
@@ -2508,7 +2599,7 @@ void MainPluginView::enterLayoutCustomizeMode (bool enable)
                 { "grpS",    &groupSoloBtn },
                 { "selGrp",  &selGroupOnlyBtn },
                 { "grpKs",   &groupKsBox },
-                { "grpVol",  &grpVolBox },
+                { "grpVol",  &grpVolFader },
                 { "grpPan",  &grpPanFader },
 
                 { "frr",     &frrBtn },
@@ -2559,59 +2650,29 @@ void MainPluginView::enterLayoutCustomizeMode (bool enable)
     repaint();
 }
 
-void MainPluginView::rebuildLibraryRows()
-{
-    visibleLibRows.clear();
-    const juce::ScopedLock sl (audioProcessor.zoneLock);
-    for (int c = 0; c < static_cast<int> (audioProcessor.libraryCategories.size()); ++c)
-    {
-        const auto& cat = audioProcessor.libraryCategories[static_cast<size_t> (c)];
-        VisibleLibRow hdr;
-        hdr.isCategory = true;
-        hdr.catIdx = c;
-        hdr.label = cat.name;
-        hdr.expanded = cat.expanded;
-        visibleLibRows.push_back (std::move (hdr));
-
-        if (cat.expanded)
-        {
-            for (const auto& item : cat.items)
-            {
-                VisibleLibRow sub;
-                sub.isCategory = false;
-                sub.catIdx = c;
-                sub.label = item.getFileNameWithoutExtension();
-                sub.expanded = false;
-                sub.file = item;
-                visibleLibRows.push_back (std::move (sub));
-            }
-        }
-    }
-    libraryList.updateContent();
-    libraryList.repaint();
-}
-
 void MainPluginView::loadLibraryItem (const juce::File& file)
 {
     if (! file.existsAsFile()) return;
     if (file.hasFileExtension (".mn6x"))
     {
         audioProcessor.loadPresetMn6x (file);
-        presetNameBox.setText (audioProcessor.currentPresetName, juce::dontSendNotification);
-        brandLettersEdit.setText (audioProcessor.brandLetters, juce::dontSendNotification);
-        brandTitleEdit.setText (audioProcessor.pluginTitleText, juce::dontSendNotification);
-        brandShapeBox.setSelectedId (audioProcessor.logoStyleId, juce::dontSendNotification);
-        brandColourBox.setSelectedId (audioProcessor.logoColourIdx + 1, juce::dontSendNotification);
+        presetBar.refreshTextFromProcessor();
+        gearFaderStyleBox.setSelectedId (audioProcessor.faderStyleId, juce::dontSendNotification);
+        gearFaderColBox.setSelectedId (audioProcessor.faderColourIdx + 1, juce::dontSendNotification);
+        gearKnobStyleBox.setSelectedId (audioProcessor.knobStyleId, juce::dontSendNotification);
+        gearKnobColBox.setSelectedId (audioProcessor.knobColourIdx + 1, juce::dontSendNotification);
+        gearSwitchStyleBox.setSelectedId (audioProcessor.switchStyleId, juce::dontSendNotification);
+        gearSwitchColBox.setSelectedId (audioProcessor.switchColourIdx + 1, juce::dontSendNotification);
         audioProcessor.setLoadedItemInPanel (file.getFileNameWithoutExtension(), file, -1);
-        mountedCard.setItem (file.getFileNameWithoutExtension(), true);
         refreshGroupBoxes(); syncGroupControls(); syncFxControls(); applyAllStyles();
     }
     else
     {
         int nextKey = juce::jlimit (0, 120, 60 + static_cast<int> (audioProcessor.zones.size()));
         audioProcessor.loadSampleIntoNewZone (file, nextKey, nextKey, nextKey);
+        audioProcessor.libraryNameText = file.getFileNameWithoutExtension();
+        presetBar.refreshTextFromProcessor();
         audioProcessor.setLoadedItemInPanel (file.getFileNameWithoutExtension(), file, nextKey);
-        mountedCard.setItem (file.getFileNameWithoutExtension(), true);
         editKeyMapper.selectSingleZone (audioProcessor.selectedZoneIndex);
     }
     syncPerZoneControls();
@@ -2636,7 +2697,7 @@ void MainPluginView::syncGroupControls()
     groupMuteBtn.setToggleState (g.muted, juce::dontSendNotification);
     groupSoloBtn.setToggleState (g.soloed, juce::dontSendNotification);
     groupKsBox.setSelectedId (g.keyswitchNote < 0 ? 1 : (g.keyswitchNote + 2), juce::dontSendNotification);
-    grpVolBox.setValue (g.volumeDb100, false);
+    grpVolFader.setValue (g.volumeDb100, false);
     grpPanFader.setValue (g.pan50, false);
     delGroupBtn.setEnabled (audioProcessor.groups.size() > 1);
 }
@@ -2682,24 +2743,21 @@ void MainPluginView::setActiveTab (ActiveTab tab)
     bool isMain = (tab == ActiveTab::Main);
     bool isEdit = (tab == ActiveTab::Edit);
 
-    tabMainBtn.setColour (juce::TextButton::buttonColourId, isMain ? juce::Colour (0xffc93b7b) : juce::Colour (0xff242c3a));
-    tabEditBtn.setColour (juce::TextButton::buttonColourId, isEdit ? juce::Colour (0xffc93b7b) : juce::Colour (0xff242c3a));
+    editModeBtn.setToggleState (isEdit, juce::dontSendNotification);
 
-    mountedCard.setVisible (isMain);
-    mainWaveDisplay.setVisible (isMain);
-    rhythmSeqHeaderLbl.setVisible (isMain);
-    seqBypassBtn.setVisible (isMain);
-    seqComp.setVisible (isMain);
-    playPauseBtn.setVisible (isMain);
-    hostSyncBtn.setVisible (isMain);
-    bpmBox.setVisible (isMain);
-    shuffleFader.setVisible (isMain);
-    timeRandFader.setVisible (isMain);
-    velRandFader.setVisible (isMain);
+    mainWaveDisplay.setVisible (isMain && mainHiddenKeys.count ("wave") == 0);
+    rhythmSeqHeaderLbl.setVisible (isMain && mainHiddenKeys.count ("seqHdr") == 0);
+    seqComp.setVisible (isMain && mainHiddenKeys.count ("seq") == 0);
+    playPauseBtn.setVisible (isMain && mainHiddenKeys.count ("play") == 0);
+    hostSyncBtn.setVisible (isMain && mainHiddenKeys.count ("sync") == 0);
+    bpmBox.setVisible (isMain && mainHiddenKeys.count ("bpm") == 0);
+    shuffleFader.setVisible (isMain && mainHiddenKeys.count ("shuf") == 0);
+    timeRandFader.setVisible (isMain && mainHiddenKeys.count ("trnd") == 0);
+    velRandFader.setVisible (isMain && mainHiddenKeys.count ("vrnd") == 0);
     gridLabel.setVisible (isMain);
-    gridBox.setVisible (isMain);
-    seqLoopBtn.setVisible (isMain);
-    seqClearBtn.setVisible (isMain);
+    gridBox.setVisible (isMain && mainHiddenKeys.count ("grid") == 0);
+    seqLoopBtn.setVisible (isMain && mainHiddenKeys.count ("loop") == 0);
+    seqClearBtn.setVisible (isMain && mainHiddenKeys.count ("clr") == 0);
 
     editViewport.setVisible (isEdit);
 
@@ -2711,11 +2769,8 @@ void MainPluginView::togglePlayPause()
 {
     bool next = ! audioProcessor.internalPlaying.load();
     audioProcessor.internalPlaying.store (next);
-    if (next)
-        if (auto* p = audioProcessor.apvts.getParameter ("seqLoop"))
-            p->setValueNotifyingHost (1.0f);
     playPauseBtn.setButtonText (next ? "PAUSE" : "PLAY");
-    playPauseBtn.setColour (juce::TextButton::buttonColourId, next ? juce::Colour (0xffc93b7b) : juce::Colour (0xff273549));
+    playPauseBtn.setToggleState (next, juce::dontSendNotification);
 }
 
 void MainPluginView::syncPerZoneControls()
@@ -2728,7 +2783,7 @@ void MainPluginView::syncPerZoneControls()
         sampleLoopBtn.setToggleState (false, juce::dontSendNotification);
         autoLoopZeroBtn.setToggleState (true, juce::dontSendNotification);
         reverseBtn.setToggleState (false, juce::dontSendNotification);
-        zoneColourBox.setSelectedId (1, juce::dontSendNotification);
+        zoneColourBox.setSelectedId (12, juce::dontSendNotification);
         adsrGraph.repaint();
         return;
     }
@@ -2756,108 +2811,6 @@ void MainPluginView::syncPerZoneControls()
     adsrGraph.repaint();
 }
 
-void MainPluginView::showBrandAndScaleMenu()
-{
-    juce::PopupMenu menu;
-    menu.addItem (1, "50%");
-    menu.addItem (2, "75%");
-    menu.addItem (3, "100% (Default)");
-    menu.addItem (4, "125%");
-    menu.addSeparator();
-    menu.addItem (5, "Settings (Logo & Plugin Name)");
-
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&brandHeader),
-        [this] (int result)
-        {
-            if (result == 1 && scaleCallback) scaleCallback (0.50f);
-            else if (result == 2 && scaleCallback) scaleCallback (0.75f);
-            else if (result == 3 && scaleCallback) scaleCallback (1.00f);
-            else if (result == 4 && scaleCallback) scaleCallback (1.25f);
-            else if (result == 5)
-            {
-                brandSettingsVisible = ! brandSettingsVisible;
-                resized();
-            }
-        });
-}
-
-void MainPluginView::saveAsDialog()
-{
-    audioProcessor.currentPresetName = presetNameBox.getText().trim();
-    juce::String defaultName = audioProcessor.currentPresetName.isEmpty() ? "Untitled" : audioProcessor.currentPresetName;
-    auto defaultFile = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile (defaultName + ".mn6x");
-    fileChooser = std::make_unique<juce::FileChooser> ("Save Preset (.mn6x)", defaultFile, "*.mn6x");
-    fileChooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
-        [this] (const juce::FileChooser& fc)
-        {
-            auto f = fc.getResult();
-            if (f != juce::File())
-            {
-                if (! f.hasFileExtension (".mn6x")) f = f.withFileExtension (".mn6x");
-                audioProcessor.currentPresetName = f.getFileNameWithoutExtension();
-                presetNameBox.setText (audioProcessor.currentPresetName, juce::dontSendNotification);
-                audioProcessor.savePresetMn6x (f);
-            }
-        });
-}
-
-int MainPluginView::getNumRows() { return static_cast<int> (visibleLibRows.size()); }
-
-void MainPluginView::paintListBoxItem (int rowNumber, juce::Graphics& g, int width, int height, bool rowIsSelected)
-{
-    if (rowNumber < 0 || rowNumber >= static_cast<int> (visibleLibRows.size())) return;
-    const auto& vr = visibleLibRows[static_cast<size_t> (rowNumber)];
-
-    if (vr.isCategory)
-    {
-        auto box = juce::Rectangle<float> (2.0f, 2.0f, static_cast<float> (width - 4), static_cast<float> (height - 4));
-        g.setColour (vr.expanded ? juce::Colour (0xff25354f) : juce::Colour (0xff1c2433));
-        g.fillRoundedRectangle (box, 5.0f);
-        g.setColour (vr.expanded ? juce::Colour (0xff5aa9ff) : juce::Colour (0xff35445e));
-        g.drawRoundedRectangle (box.reduced (0.5f), 5.0f, 1.2f);
-
-        g.setColour (juce::Colour (0xff74b9ff));
-        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-        g.drawText (vr.expanded ? "v" : ">", 8, 0, 14, height, juce::Justification::centredLeft);
-
-        g.setColour (juce::Colours::white);
-        g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
-        g.drawText (vr.label, 24, 0, width - 30, height, juce::Justification::centredLeft, true);
-    }
-    else
-    {
-        g.fillAll (rowIsSelected ? juce::Colour (0xff2e4a73) : juce::Colour (0xff121720));
-        g.setColour (juce::Colour (0xff4cc98f));
-        g.fillRect (14, 7, 3, height - 14);
-        g.setColour (juce::Colours::lightgrey);
-        g.setFont (juce::FontOptions (11.0f, juce::Font::plain));
-        g.drawText (vr.label, 22, 0, width - 26, height, juce::Justification::centredLeft, true);
-    }
-}
-
-void MainPluginView::listBoxItemClicked (int row, const juce::MouseEvent&)
-{
-    if (row < 0 || row >= static_cast<int> (visibleLibRows.size())) return;
-    const auto& vr = visibleLibRows[static_cast<size_t> (row)];
-    if (vr.isCategory)
-    {
-        audioProcessor.toggleLibraryCategoryExpanded (vr.catIdx);
-        rebuildLibraryRows();
-    }
-    else
-    {
-        loadLibraryItem (vr.file);
-    }
-}
-
-void MainPluginView::listBoxItemDoubleClicked (int row, const juce::MouseEvent&)
-{
-    if (row < 0 || row >= static_cast<int> (visibleLibRows.size())) return;
-    const auto& vr = visibleLibRows[static_cast<size_t> (row)];
-    if (! vr.isCategory)
-        loadLibraryItem (vr.file);
-}
-
 void MainPluginView::handleFilesDropped (const juce::StringArray& files, int localX, int localY)
 {
     bool hasPreset = false;
@@ -2875,7 +2828,7 @@ void MainPluginView::handleFilesDropped (const juce::StringArray& files, int loc
             if (f.hasFileExtension (".mn6x"))
             {
                 audioProcessor.loadPresetMn6x (f);
-                presetNameBox.setText (audioProcessor.currentPresetName, juce::dontSendNotification);
+                presetBar.refreshTextFromProcessor();
                 refreshGroupBoxes(); syncGroupControls(); syncFxControls();
             }
             else
@@ -2908,7 +2861,7 @@ void MainPluginView::handleFilesDropped (const juce::StringArray& files, int loc
         if (f.hasFileExtension (".mn6x"))
         {
             audioProcessor.loadPresetMn6x (f);
-            presetNameBox.setText (audioProcessor.currentPresetName, juce::dontSendNotification);
+            presetBar.refreshTextFromProcessor();
             refreshGroupBoxes(); syncGroupControls(); syncFxControls();
         }
         else if (activeTab == ActiveTab::Edit)
@@ -2939,8 +2892,13 @@ void MainPluginView::repaintDynamicAreas()
 }
 
 static void applySavedOrDefault (juce::Component& c, const std::map<juce::String, juce::Rectangle<int>>& map,
-                                 const juce::String& key, juce::Rectangle<int> defB)
+                                 const std::set<juce::String>& hiddenSet, const juce::String& key, juce::Rectangle<int> defB)
 {
+    if (hiddenSet.count (key) > 0)
+    {
+        c.setVisible (false);
+        return;
+    }
     auto it = map.find (key);
     c.setBounds (it != map.end() ? it->second : defB);
 }
@@ -2951,87 +2909,88 @@ void MainPluginView::layoutEditContent (int viewportW)
     int y = 4;
 
     auto grpTop = juce::Rectangle<int> (4, y, contentW - 8, 28);
-    applySavedOrDefault (addGroupBtn,     editCustomBounds, "addGrp",  grpTop.removeFromLeft (52).reduced (1));
-    applySavedOrDefault (delGroupBtn,     editCustomBounds, "delGrp",  grpTop.removeFromLeft (56).reduced (1));
-    applySavedOrDefault (groupSelectBox,  editCustomBounds, "grpSel",  grpTop.removeFromLeft (96).reduced (1));
-    applySavedOrDefault (groupNameEdit,   editCustomBounds, "grpName", grpTop.removeFromLeft (100).reduced (2, 1));
-    applySavedOrDefault (groupMuteBtn,    editCustomBounds, "grpM",    grpTop.removeFromLeft (30).reduced (1));
-    applySavedOrDefault (groupSoloBtn,    editCustomBounds, "grpS",    grpTop.removeFromLeft (30).reduced (1));
-    applySavedOrDefault (selGroupOnlyBtn, editCustomBounds, "selGrp",  grpTop.removeFromLeft (58).reduced (1));
-    applySavedOrDefault (groupKsBox,      editCustomBounds, "grpKs",   grpTop.removeFromLeft (84).reduced (1));
+    applySavedOrDefault (addGroupBtn,     editCustomBounds, editHiddenKeys, "addGrp",  grpTop.removeFromLeft (52).reduced (1));
+    applySavedOrDefault (delGroupBtn,     editCustomBounds, editHiddenKeys, "delGrp",  grpTop.removeFromLeft (56).reduced (1));
+    applySavedOrDefault (groupSelectBox,  editCustomBounds, editHiddenKeys, "grpSel",  grpTop.removeFromLeft (96).reduced (1));
+    applySavedOrDefault (groupNameEdit,   editCustomBounds, editHiddenKeys, "grpName", grpTop.removeFromLeft (100).reduced (2, 1));
+    applySavedOrDefault (groupMuteBtn,    editCustomBounds, editHiddenKeys, "grpM",    grpTop.removeFromLeft (30).reduced (1));
+    applySavedOrDefault (groupSoloBtn,    editCustomBounds, editHiddenKeys, "grpS",    grpTop.removeFromLeft (30).reduced (1));
+    applySavedOrDefault (selGroupOnlyBtn, editCustomBounds, editHiddenKeys, "selGrp",  grpTop.removeFromLeft (58).reduced (1));
+    applySavedOrDefault (groupKsBox,      editCustomBounds, editHiddenKeys, "grpKs",   grpTop.removeFromLeft (84).reduced (1));
     y += 32;
 
-    auto grpCtrlRow = juce::Rectangle<int> (4, y, contentW - 8, 38);
-    applySavedOrDefault (grpVolBox,   editCustomBounds, "grpVol", grpCtrlRow.removeFromLeft (130).reduced (3, 0));
-    applySavedOrDefault (grpPanFader, editCustomBounds, "grpPan", grpCtrlRow.reduced (4, 0));
-    y += 42;
+    auto grpCtrlRow = juce::Rectangle<int> (4, y, contentW - 8, 36);
+    int halfGW = grpCtrlRow.getWidth() / 2;
+    applySavedOrDefault (grpVolFader, editCustomBounds, editHiddenKeys, "grpVol", grpCtrlRow.removeFromLeft (halfGW).reduced (3, 0));
+    applySavedOrDefault (grpPanFader, editCustomBounds, editHiddenKeys, "grpPan", grpCtrlRow.reduced (3, 0));
+    y += 40;
 
     auto mapHdr = juce::Rectangle<int> (4, y, contentW - 8, 26);
-    applySavedOrDefault (frrBtn,            editCustomBounds, "frr",    mapHdr.removeFromLeft (46).reduced (1));
-    applySavedOrDefault (fvlBtn,            editCustomBounds, "fvl",    mapHdr.removeFromLeft (46).reduced (1));
-    applySavedOrDefault (pitchTrackBtn,     editCustomBounds, "pitchT", mapHdr.removeFromLeft (54).reduced (1));
-    applySavedOrDefault (selectAllZonesBtn, editCustomBounds, "allZ",   mapHdr.removeFromLeft (40).reduced (1));
-    applySavedOrDefault (delZoneBtn,        editCustomBounds, "delZ",   mapHdr.removeFromLeft (40).reduced (1));
-    applySavedOrDefault (autoGridBtn,       editCustomBounds, "autoG",  mapHdr.removeFromLeft (70).reduced (1));
-    applySavedOrDefault (zoneColourBox,     editCustomBounds, "colZ",   mapHdr.removeFromRight (108).reduced (1));
-    applySavedOrDefault (velGridBox,        editCustomBounds, "velG",   mapHdr.removeFromRight (82).reduced (1));
+    applySavedOrDefault (frrBtn,            editCustomBounds, editHiddenKeys, "frr",    mapHdr.removeFromLeft (46).reduced (1));
+    applySavedOrDefault (fvlBtn,            editCustomBounds, editHiddenKeys, "fvl",    mapHdr.removeFromLeft (46).reduced (1));
+    applySavedOrDefault (pitchTrackBtn,     editCustomBounds, editHiddenKeys, "pitchT", mapHdr.removeFromLeft (54).reduced (1));
+    applySavedOrDefault (selectAllZonesBtn, editCustomBounds, editHiddenKeys, "allZ",   mapHdr.removeFromLeft (40).reduced (1));
+    applySavedOrDefault (delZoneBtn,        editCustomBounds, editHiddenKeys, "delZ",   mapHdr.removeFromLeft (40).reduced (1));
+    applySavedOrDefault (autoGridBtn,       editCustomBounds, editHiddenKeys, "autoG",  mapHdr.removeFromLeft (70).reduced (1));
+    applySavedOrDefault (zoneColourBox,     editCustomBounds, editHiddenKeys, "colZ",   mapHdr.removeFromRight (108).reduced (1));
+    applySavedOrDefault (velGridBox,        editCustomBounds, editHiddenKeys, "velG",   mapHdr.removeFromRight (82).reduced (1));
     y += 28;
 
-    applySavedOrDefault (editKeyMapper, editCustomBounds, "mapper", { 4, y, contentW - 8, 225 });
+    applySavedOrDefault (editKeyMapper, editCustomBounds, editHiddenKeys, "mapper", { 4, y, contentW - 8, 225 });
     y += 233;
 
     auto wavHdr = juce::Rectangle<int> (4, y, contentW - 8, 26);
-    applySavedOrDefault (wavePlayBtn,     editCustomBounds, "wPlay",  wavHdr.removeFromLeft (44).reduced (1));
-    applySavedOrDefault (trackSelectBox,  editCustomBounds, "trk",    wavHdr.removeFromLeft (146).reduced (1));
-    applySavedOrDefault (realRRBtn,       editCustomBounds, "rr",     wavHdr.removeFromLeft (36).reduced (1));
-    applySavedOrDefault (sampleLoopBtn,   editCustomBounds, "sLoop",  wavHdr.removeFromLeft (48).reduced (1));
-    applySavedOrDefault (autoLoopZeroBtn, editCustomBounds, "zCross", wavHdr.removeFromLeft (112).reduced (1));
-    applySavedOrDefault (reverseBtn,      editCustomBounds, "rev",    wavHdr.removeFromLeft (44).reduced (1));
-    applySavedOrDefault (normalizeBtn,    editCustomBounds, "norm",   wavHdr.removeFromLeft (52).reduced (1));
-    applySavedOrDefault (resetZoneBtn,    editCustomBounds, "rstZ",   wavHdr.removeFromRight (52).reduced (1));
+    applySavedOrDefault (wavePlayBtn,     editCustomBounds, editHiddenKeys, "wPlay",  wavHdr.removeFromLeft (44).reduced (1));
+    applySavedOrDefault (trackSelectBox,  editCustomBounds, editHiddenKeys, "trk",    wavHdr.removeFromLeft (146).reduced (1));
+    applySavedOrDefault (realRRBtn,       editCustomBounds, editHiddenKeys, "rr",     wavHdr.removeFromLeft (36).reduced (1));
+    applySavedOrDefault (sampleLoopBtn,   editCustomBounds, editHiddenKeys, "sLoop",  wavHdr.removeFromLeft (48).reduced (1));
+    applySavedOrDefault (autoLoopZeroBtn, editCustomBounds, editHiddenKeys, "zCross", wavHdr.removeFromLeft (112).reduced (1));
+    applySavedOrDefault (reverseBtn,      editCustomBounds, editHiddenKeys, "rev",    wavHdr.removeFromLeft (44).reduced (1));
+    applySavedOrDefault (normalizeBtn,    editCustomBounds, editHiddenKeys, "norm",   wavHdr.removeFromLeft (52).reduced (1));
+    applySavedOrDefault (resetZoneBtn,    editCustomBounds, editHiddenKeys, "rstZ",   wavHdr.removeFromRight (52).reduced (1));
     y += 28;
 
-    applySavedOrDefault (waveEditor,     editCustomBounds, "waveEd", { 4, y, contentW - 8, 165 });
+    applySavedOrDefault (waveEditor,     editCustomBounds, editHiddenKeys, "waveEd", { 4, y, contentW - 8, 165 });
     y += 171;
 
-    applySavedOrDefault (crossfadeFader, editCustomBounds, "xfade",  { 4, y, contentW - 8, 34 });
+    applySavedOrDefault (crossfadeFader, editCustomBounds, editHiddenKeys, "xfade",  { 4, y, contentW - 8, 34 });
     y += 38;
 
     auto ppvRow = juce::Rectangle<int> (4, y, contentW - 8, 38);
-    applySavedOrDefault (pitchBox, editCustomBounds, "pitch", ppvRow.removeFromLeft (130).reduced (3, 0));
-    applySavedOrDefault (volBox,   editCustomBounds, "vol",   ppvRow.removeFromRight (130).reduced (3, 0));
-    applySavedOrDefault (panFader, editCustomBounds, "pan",   ppvRow.reduced (4, 0));
+    applySavedOrDefault (pitchBox, editCustomBounds, editHiddenKeys, "pitch", ppvRow.removeFromLeft (130).reduced (3, 0));
+    applySavedOrDefault (volBox,   editCustomBounds, editHiddenKeys, "vol",   ppvRow.removeFromRight (130).reduced (3, 0));
+    applySavedOrDefault (panFader, editCustomBounds, editHiddenKeys, "pan",   ppvRow.reduced (4, 0));
     y += 42;
 
     auto adsrRow = juce::Rectangle<int> (4, y, contentW - 8, 42);
-    applySavedOrDefault (attackBox,  editCustomBounds, "atk",   adsrRow.removeFromLeft (96).reduced (2, 0));
-    applySavedOrDefault (decayBox,   editCustomBounds, "dec",   adsrRow.removeFromLeft (96).reduced (2, 0));
-    applySavedOrDefault (sustainBox, editCustomBounds, "sus",   adsrRow.removeFromLeft (96).reduced (2, 0));
-    applySavedOrDefault (releaseBox, editCustomBounds, "rel",   adsrRow.removeFromLeft (96).reduced (2, 0));
-    applySavedOrDefault (adsrGraph,  editCustomBounds, "adsrG", adsrRow.reduced (4, 1));
+    applySavedOrDefault (attackBox,  editCustomBounds, editHiddenKeys, "atk",   adsrRow.removeFromLeft (96).reduced (2, 0));
+    applySavedOrDefault (decayBox,   editCustomBounds, editHiddenKeys, "dec",   adsrRow.removeFromLeft (96).reduced (2, 0));
+    applySavedOrDefault (sustainBox, editCustomBounds, editHiddenKeys, "sus",   adsrRow.removeFromLeft (96).reduced (2, 0));
+    applySavedOrDefault (releaseBox, editCustomBounds, editHiddenKeys, "rel",   adsrRow.removeFromLeft (96).reduced (2, 0));
+    applySavedOrDefault (adsrGraph,  editCustomBounds, editHiddenKeys, "adsrG", adsrRow.reduced (4, 1));
     y += 52;
 
     auto fxHdr = juce::Rectangle<int> (4, y, contentW - 8, 28);
-    applySavedOrDefault (fxSlotSelectBox, editCustomBounds, "fxSlot", fxHdr.removeFromLeft (78).reduced (1));
-    applySavedOrDefault (fxTypeBox,       editCustomBounds, "fxType", fxHdr.removeFromLeft (112).reduced (1));
-    applySavedOrDefault (fxEnableBtn,     editCustomBounds, "fxEn",   fxHdr.removeFromLeft (48).reduced (1));
-    applySavedOrDefault (fxBypassBtn,     editCustomBounds, "fxByp",  fxHdr.removeFromLeft (58).reduced (1));
+    applySavedOrDefault (fxSlotSelectBox, editCustomBounds, editHiddenKeys, "fxSlot", fxHdr.removeFromLeft (78).reduced (1));
+    applySavedOrDefault (fxTypeBox,       editCustomBounds, editHiddenKeys, "fxType", fxHdr.removeFromLeft (112).reduced (1));
+    applySavedOrDefault (fxEnableBtn,     editCustomBounds, editHiddenKeys, "fxEn",   fxHdr.removeFromLeft (48).reduced (1));
+    applySavedOrDefault (fxBypassBtn,     editCustomBounds, editHiddenKeys, "fxByp",  fxHdr.removeFromLeft (58).reduced (1));
     y += 32;
 
-    applySavedOrDefault (fxDisplay, editCustomBounds, "fxDisp", { 4, y, contentW - 8, 86 });
+    applySavedOrDefault (fxDisplay, editCustomBounds, editHiddenKeys, "fxDisp", { 4, y, contentW - 8, 86 });
     y += 90;
 
     auto fxRow1 = juce::Rectangle<int> (4, y, contentW - 8, 34);
     int fxW3 = fxRow1.getWidth() / 3;
-    applySavedOrDefault (fxP1, editCustomBounds, "fxP1", fxRow1.removeFromLeft (fxW3).reduced (3, 0));
-    applySavedOrDefault (fxP2, editCustomBounds, "fxP2", fxRow1.removeFromLeft (fxW3).reduced (3, 0));
-    applySavedOrDefault (fxP3, editCustomBounds, "fxP3", fxRow1.reduced (3, 0));
+    applySavedOrDefault (fxP1, editCustomBounds, editHiddenKeys, "fxP1", fxRow1.removeFromLeft (fxW3).reduced (3, 0));
+    applySavedOrDefault (fxP2, editCustomBounds, editHiddenKeys, "fxP2", fxRow1.removeFromLeft (fxW3).reduced (3, 0));
+    applySavedOrDefault (fxP3, editCustomBounds, editHiddenKeys, "fxP3", fxRow1.reduced (3, 0));
     y += 38;
 
     auto fxRow2 = juce::Rectangle<int> (4, y, contentW - 8, 34);
     int fxW2 = fxRow2.getWidth() / 2;
-    applySavedOrDefault (fxP4, editCustomBounds, "fxP4", fxRow2.removeFromLeft (fxW2).reduced (3, 0));
-    applySavedOrDefault (fxP5, editCustomBounds, "fxP5", fxRow2.reduced (3, 0));
+    applySavedOrDefault (fxP4, editCustomBounds, editHiddenKeys, "fxP4", fxRow2.removeFromLeft (fxW2).reduced (3, 0));
+    applySavedOrDefault (fxP5, editCustomBounds, editHiddenKeys, "fxP5", fxRow2.reduced (3, 0));
     y += 44;
 
     int maxBottom = y + 8;
@@ -3042,19 +3001,20 @@ void MainPluginView::layoutEditContent (int viewportW)
 
 void MainPluginView::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff1c222d));
-    g.setColour (juce::Colour (0xff6e7b91));
-    g.setFont (10.0f);
-    g.drawText (audioProcessor.getBuildVersionString(), getWidth() - 64, getHeight() - 15, 56, 13, juce::Justification::centredRight);
+    g.fillAll (juce::Colour (0xff090a0c));
+
+    g.setColour (juce::Colour (0xffcfd5df));
+    g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
+    g.drawText (audioProcessor.getBuildVersionString(), getWidth() - 76, getHeight() - 13, 68, 12, juce::Justification::centredRight);
 
     if (activeTab == ActiveTab::Edit && editViewport.isVisible())
     {
-        int divY = editViewport.getY() + 678 - editViewport.getViewPositionY();
+        int divY = editViewport.getY() + 676 - editViewport.getViewPositionY();
         if (divY > editViewport.getY() && divY < editViewport.getBottom())
         {
-            g.setColour (juce::Colour (0xff3c4c66));
+            g.setColour (juce::Colour (0xffe6e9ef));
             g.drawHorizontalLine (divY, static_cast<float> (editViewport.getX() + 10), static_cast<float> (editViewport.getRight() - 20));
-            g.setColour (juce::Colour (0xff8fa3c4));
+            g.setColour (juce::Colour (0xfff2f4f8));
             g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
             g.drawText ("EFFECTS", editViewport.getX() + 14, divY + 3, 90, 14, juce::Justification::centredLeft);
         }
@@ -3063,105 +3023,78 @@ void MainPluginView::paint (juce::Graphics& g)
 
 void MainPluginView::resized()
 {
-    auto area = getLocalBounds().reduced (8);
+    auto area = getLocalBounds().reduced (8, 6);
+    auto bottomStrip = area.removeFromBottom (46);
+    bottomPiano.setBounds (bottomStrip.removeFromTop (32).reduced (0, 1));
 
-    auto libArea = area.removeFromLeft (172);
-    brandHeader.setBounds (libArea.removeFromTop (44).reduced (1));
-    libArea.removeFromTop (6);
-    auto libBtnRow = libArea.removeFromTop (24);
-    addLibBtn.setBounds (libBtnRow.removeFromLeft (98).reduced (1));
-    sortAzBtn.setBounds (libBtnRow.removeFromLeft (35).reduced (1));
-    delLibBtn.setBounds (libBtnRow.reduced (1));
-    libArea.removeFromTop (4);
-    libraryList.setBounds (libArea.reduced (1, 0));
-
-    area.removeFromLeft (8);
-
-    auto topBar = area.removeFromTop (30);
-    tabMainBtn.setBounds  (topBar.removeFromLeft (72).reduced (2, 1));
-    tabEditBtn.setBounds  (topBar.removeFromLeft (72).reduced (2, 1));
+    // Top bar: Permanent "NOISE MU6IX" scale button + Enlarged PresetBar (v + KINETIK + Save Icon) + Edit Icon + Gear Icon
+    auto topBar = area.removeFromTop (32);
+    titleScaleBtn.setBounds (topBar.removeFromLeft (134).reduced (2, 1));
     topBar.removeFromLeft (6);
-    presetNameBox.setBounds (topBar.removeFromLeft (250).reduced (2, 2));
-    saveBtn.setBounds       (topBar.removeFromLeft (66).reduced (2));
-    saveAsBtn.setBounds     (topBar.removeFromLeft (74).reduced (2));
     topGearBtn.setBounds    (topBar.removeFromRight (32).reduced (2, 1));
-
-    brandShapeBox.setVisible (brandSettingsVisible);
-    brandColourBox.setVisible (brandSettingsVisible);
-    brandLettersEdit.setVisible (brandSettingsVisible);
-    brandTitleEdit.setVisible (brandSettingsVisible);
-    brandApplyBtn.setVisible (brandSettingsVisible);
-
-    if (brandSettingsVisible)
-    {
-        area.removeFromTop (4);
-        auto bRow = area.removeFromTop (28);
-        brandShapeBox.setBounds    (bRow.removeFromLeft (120).reduced (1));
-        brandColourBox.setBounds   (bRow.removeFromLeft (120).reduced (1));
-        brandLettersEdit.setBounds (bRow.removeFromLeft (76).reduced (2, 1));
-        brandTitleEdit.setBounds   (bRow.removeFromLeft (140).reduced (2, 1));
-        brandApplyBtn.setBounds    (bRow.removeFromLeft (88).reduced (1));
-    }
+    editModeBtn.setBounds   (topBar.removeFromRight (32).reduced (2, 1));
+    topBar.removeFromRight (4);
+    presetBar.setBounds     (topBar.reduced (2, 1));
 
     if (layoutEditMode)
     {
         area.removeFromTop (4);
-        auto gRow = area.removeFromTop (28);
-        gearGridBox.setBounds        (gRow.removeFromLeft (106).reduced (1));
-        gearKnobStyleBox.setBounds   (gRow.removeFromLeft (118).reduced (1));
-        gearFaderStyleBox.setBounds  (gRow.removeFromLeft (118).reduced (1));
-        gearSwitchStyleBox.setBounds (gRow.removeFromLeft (118).reduced (1));
-        gearDoneBtn.setBounds        (gRow.removeFromRight (66).reduced (1));
-        gearResetBtn.setBounds       (gRow.removeFromRight (62).reduced (1));
-    }
+        auto gRow1 = area.removeFromTop (26);
+        gearGridBox.setBounds        (gRow1.removeFromLeft (96).reduced (1));
+        gearFaderStyleBox.setBounds  (gRow1.removeFromLeft (96).reduced (1));
+        gearFaderColBox.setBounds  (gRow1.removeFromLeft (124).reduced (1));
+        gearKnobStyleBox.setBounds   (gRow1.removeFromLeft (96).reduced (1));
+        gearKnobColBox.setBounds   (gRow1.removeFromLeft (124).reduced (1));
 
-    auto pianoArea = area.removeFromBottom (34);
-    bottomPiano.setBounds (pianoArea.reduced (0, 2));
-    area.removeFromBottom (4);
+        area.removeFromTop (3);
+        auto gRow2 = area.removeFromTop (26);
+        gearSwitchStyleBox.setBounds (gRow2.removeFromLeft (96).reduced (1));
+        gearSwitchColBox.setBounds (gRow2.removeFromLeft (124).reduced (1));
+        gearDoneBtn.setBounds        (gRow2.removeFromRight (64).reduced (1));
+        gearResetBtn.setBounds       (gRow2.removeFromRight (60).reduced (1));
+        gearDeleteBtn.setBounds      (gRow2.removeFromRight (64).reduced (1));
+    }
 
     if (activeTab == ActiveTab::Main)
     {
         auto workArea = area;
         area.removeFromTop (4);
-        auto defCard = area.removeFromTop (36);
-        area.removeFromTop (4);
-        auto defWave = area.removeFromTop (136);
+        auto defWave = area.removeFromTop (168);
         area.removeFromTop (5);
         auto seqHdr = area.removeFromTop (18);
-        auto defSeqHdr = seqHdr.removeFromLeft (165);
-        auto defSeqByp = seqHdr.removeFromRight (56).reduced (1, 0);
+        auto defSeqHdr = seqHdr.removeFromLeft (170);
         area.removeFromTop (2);
-        auto defSeq = area.removeFromTop (216);
+        auto defSeq = area.removeFromTop (228);
 
-        area.removeFromTop (5);
+        area.removeFromTop (6);
         auto bottomCtrl = area.removeFromTop (52);
         auto defPlay = bottomCtrl.removeFromLeft (60).reduced (2, 8);
-        auto defSync = bottomCtrl.removeFromLeft (56).reduced (2, 9);
+        auto defSync = bottomCtrl.removeFromLeft (58).reduced (2, 8);
         auto defBpm  = bottomCtrl.removeFromLeft (68).reduced (2, 2);
         auto defShuf = bottomCtrl.removeFromLeft (94).reduced (2, 2);
         auto defTrnd = bottomCtrl.removeFromLeft (94).reduced (2, 2);
         auto defVrnd = bottomCtrl.removeFromLeft (94).reduced (2, 2);
 
-        auto gridArea = bottomCtrl.removeFromLeft (94).reduced (2, 2);
-        gridLabel.setBounds (gridArea.removeFromTop (13));
-        auto defGrid = gridArea.removeFromTop (26).reduced (0, 1);
-        auto defLoop = bottomCtrl.removeFromLeft (58).reduced (2, 10);
-        auto defClr  = bottomCtrl.removeFromLeft (40).reduced (2, 10);
+        auto gridArea = bottomCtrl.removeFromLeft (98).reduced (2, 2);
+        auto defGridLbl = gridArea.removeFromTop (13);
+        auto defGridBox = gridArea.removeFromTop (26).reduced (0, 1);
+        gridLabel.setBounds (defGridLbl);
 
-        applySavedOrDefault (mountedCard,        mainCustomBounds, "card",   defCard);
-        applySavedOrDefault (mainWaveDisplay,    mainCustomBounds, "wave",   defWave);
-        applySavedOrDefault (rhythmSeqHeaderLbl, mainCustomBounds, "seqHdr", defSeqHdr);
-        applySavedOrDefault (seqBypassBtn,       mainCustomBounds, "seqByp", defSeqByp);
-        applySavedOrDefault (seqComp,            mainCustomBounds, "seq",    defSeq);
-        applySavedOrDefault (playPauseBtn,       mainCustomBounds, "play",   defPlay);
-        applySavedOrDefault (hostSyncBtn,        mainCustomBounds, "sync",   defSync);
-        applySavedOrDefault (bpmBox,             mainCustomBounds, "bpm",    defBpm);
-        applySavedOrDefault (shuffleFader,       mainCustomBounds, "shuf",   defShuf);
-        applySavedOrDefault (timeRandFader,      mainCustomBounds, "trnd",   defTrnd);
-        applySavedOrDefault (velRandFader,       mainCustomBounds, "vrnd",   defVrnd);
-        applySavedOrDefault (gridBox,            mainCustomBounds, "grid",   defGrid);
-        applySavedOrDefault (seqLoopBtn,         mainCustomBounds, "loop",   defLoop);
-        applySavedOrDefault (seqClearBtn,        mainCustomBounds, "clr",    defClr);
+        auto defLoop = bottomCtrl.removeFromLeft (60).reduced (2, 8);
+        auto defClr  = bottomCtrl.removeFromLeft (44).reduced (2, 8);
+
+        applySavedOrDefault (mainWaveDisplay,    mainCustomBounds, mainHiddenKeys, "wave",   defWave);
+        applySavedOrDefault (rhythmSeqHeaderLbl, mainCustomBounds, mainHiddenKeys, "seqHdr", defSeqHdr);
+        applySavedOrDefault (seqComp,            mainCustomBounds, mainHiddenKeys, "seq",    defSeq);
+        applySavedOrDefault (playPauseBtn,       mainCustomBounds, mainHiddenKeys, "play",   defPlay);
+        applySavedOrDefault (hostSyncBtn,        mainCustomBounds, mainHiddenKeys, "sync",   defSync);
+        applySavedOrDefault (bpmBox,             mainCustomBounds, mainHiddenKeys, "bpm",    defBpm);
+        applySavedOrDefault (shuffleFader,       mainCustomBounds, mainHiddenKeys, "shuf",   defShuf);
+        applySavedOrDefault (timeRandFader,      mainCustomBounds, mainHiddenKeys, "trnd",   defTrnd);
+        applySavedOrDefault (velRandFader,       mainCustomBounds, mainHiddenKeys, "vrnd",   defVrnd);
+        applySavedOrDefault (gridBox,            mainCustomBounds, mainHiddenKeys, "grid",   defGridBox);
+        applySavedOrDefault (seqLoopBtn,         mainCustomBounds, mainHiddenKeys, "loop",   defLoop);
+        applySavedOrDefault (seqClearBtn,        mainCustomBounds, mainHiddenKeys, "clr",    defClr);
 
         if (layoutEditMode)
         {
@@ -3183,7 +3116,7 @@ void MainPluginView::resized()
     }
 }
 
-// ---------------- Outer Scalable Editor ----------------
+// ---------------- Outer Scalable Editor (No keyboard shortcut for tab switching) ----------------
 RythmeAudioProcessorEditor::RythmeAudioProcessorEditor (RythmeAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p),
       mainView (p, [this] (float s) { applyUiScale (s); })
@@ -3213,7 +3146,7 @@ void RythmeAudioProcessorEditor::applyUiScale (float newScale)
              static_cast<int> (std::round (baseHeight * currentScale)));
 }
 
-void RythmeAudioProcessorEditor::paint (juce::Graphics& g) { g.fillAll (juce::Colour (0xff1c222d)); }
+void RythmeAudioProcessorEditor::paint (juce::Graphics& g) { g.fillAll (juce::Colour (0xff090a0c)); }
 
 void RythmeAudioProcessorEditor::resized()
 {

@@ -157,10 +157,10 @@ void SimpleFxSlot::processStereo (float* L, float* R, int numSamples, double sr)
 juce::Colour RythmeAudioProcessor::getPaletteColour (int idx)
 {
     static const juce::Colour palette[numPaletteColours] = {
-        juce::Colour (0xff4ca3ff), juce::Colour (0xffe04f8a), juce::Colour (0xffee5253),
-        juce::Colour (0xffee7b38), juce::Colour (0xffe8a138), juce::Colour (0xffd9c838),
-        juce::Colour (0xff4cc98f), juce::Colour (0xff2eb872), juce::Colour (0xff38c4d9),
-        juce::Colour (0xffa66cff), juce::Colour (0xffc56cf0), juce::Colour (0xffd0d6e0)
+        juce::Colour (0xffd8dde6), juce::Colour (0xffb8c0cc), juce::Colour (0xff98a2b3),
+        juce::Colour (0xff78849b), juce::Colour (0xff4ca3ff), juce::Colour (0xffff5599),
+        juce::Colour (0xff4cc98f), juce::Colour (0xffe8a138), juce::Colour (0xffa66cff),
+        juce::Colour (0xff38c4d9), juce::Colour (0xffee5253), juce::Colour (0xfff2f4f8)
     };
     return palette[juce::jlimit (0, numPaletteColours - 1, idx)];
 }
@@ -168,8 +168,8 @@ juce::Colour RythmeAudioProcessor::getPaletteColour (int idx)
 juce::String RythmeAudioProcessor::getPaletteColourName (int idx)
 {
     static const char* names[numPaletteColours] = {
-        "Blue (Default)", "Pink", "Red", "Orange", "Amber", "Gold",
-        "Emerald", "Green", "Cyan", "Purple", "Magenta", "Vintage White"
+        "Vintage Silver", "Light Ash", "Mid Slate", "Dark Graphite",
+        "Blue", "Pink", "Emerald", "Amber", "Purple", "Cyan", "Red", "Pure White"
     };
     return names[juce::jlimit (0, numPaletteColours - 1, idx)];
 }
@@ -211,14 +211,66 @@ juce::File RythmeAudioProcessor::getRegistryFile() const
 {
     auto appData = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
                        .getChildFile ("NoiseMu6ixStudio")
-                       .getChildFile ("RYTHME");
+                       .getChildFile ("NOISE_MU6IX");
     appData.createDirectory();
     return appData.getChildFile ("library_registry.xml");
 }
 
+void RythmeAudioProcessor::scanFolderIntoCategories (const juce::File& folder)
+{
+    libraryCategories.clear();
+    if (! folder.isDirectory()) return;
+
+    juce::Array<juce::File> subDirs;
+    folder.findChildFiles (subDirs, juce::File::findDirectories, false);
+    subDirs.sort();
+
+    for (const auto& sd : subDirs)
+    {
+        LibraryCategoryEntry cat;
+        cat.name = sd.getFileName();
+        cat.folder = sd;
+        cat.expanded = false;
+        for (const auto& f : sd.findChildFiles (juce::File::findFiles, true, "*.wav;*.aiff;*.flac;*.mn6x"))
+            cat.items.push_back (f);
+        std::sort (cat.items.begin(), cat.items.end(), [] (const juce::File& a, const juce::File& b)
+        {
+            return a.getFileNameWithoutExtension().compareIgnoreCase (b.getFileNameWithoutExtension()) < 0;
+        });
+        libraryCategories.push_back (std::move (cat));
+    }
+
+    std::vector<juce::File> rootItems;
+    for (const auto& f : folder.findChildFiles (juce::File::findFiles, false, "*.wav;*.aiff;*.flac;*.mn6x"))
+        rootItems.push_back (f);
+    if (! rootItems.empty())
+    {
+        std::sort (rootItems.begin(), rootItems.end(), [] (const juce::File& a, const juce::File& b)
+        {
+            return a.getFileNameWithoutExtension().compareIgnoreCase (b.getFileNameWithoutExtension()) < 0;
+        });
+        LibraryCategoryEntry rootCat;
+        rootCat.name = folder.getFileName();
+        rootCat.folder = folder;
+        rootCat.expanded = true;
+        rootCat.items = std::move (rootItems);
+        libraryCategories.insert (libraryCategories.begin(), std::move (rootCat));
+    }
+}
+
+void RythmeAudioProcessor::setRootLibraryFolder (const juce::File& folder)
+{
+    if (! folder.isDirectory()) return;
+    const juce::ScopedLock sl (zoneLock);
+    rootLibraryFolder = folder;
+    scanFolderIntoCategories (folder);
+    saveLibraryRegistry();
+}
+
 void RythmeAudioProcessor::saveLibraryRegistry()
 {
-    juce::XmlElement root ("RYTHME_LIBRARY");
+    juce::XmlElement root ("NOISE_MU6IX_LIBRARY");
+    root.setAttribute ("rootFolder", rootLibraryFolder.getFullPathName());
     for (const auto& cat : libraryCategories)
     {
         auto* cx = root.createNewChildElement ("CATEGORY");
@@ -240,7 +292,14 @@ void RythmeAudioProcessor::loadLibraryRegistry()
     auto regFile = getRegistryFile();
     if (! regFile.existsAsFile()) return;
     auto xml = juce::XmlDocument::parse (regFile);
-    if (xml == nullptr || ! xml->hasTagName ("RYTHME_LIBRARY")) return;
+    if (xml == nullptr) return;
+
+    rootLibraryFolder = juce::File (xml->getStringAttribute ("rootFolder"));
+    if (rootLibraryFolder.isDirectory())
+    {
+        scanFolderIntoCategories (rootLibraryFolder);
+        return;
+    }
 
     for (auto* cx : xml->getChildIterator())
     {
@@ -287,7 +346,7 @@ void RythmeAudioProcessor::addLibraryFolderPersistent (const juce::File& folder)
     }
 
     LibraryCategoryEntry cat;
-    cat.name = folder.getFileName().toUpperCase();
+    cat.name = folder.getFileName();
     cat.folder = folder;
     cat.expanded = true;
     for (const auto& f : folder.findChildFiles (juce::File::findFiles, true, "*.wav;*.aiff;*.flac;*.mn6x"))
@@ -492,8 +551,8 @@ int RythmeAudioProcessor::createEmptyZone (int key)
     z.realRREnabled = true;
     z.autoLoopZeroCross = true;
     z.seqEvents = createDefaultEvents();
-    z.colourIndex = 0;
-    z.colour = getPaletteColour (0);
+    z.colourIndex = 11;
+    z.colour = getPaletteColour (11);
     zones.push_back (std::move (z));
     selectedZoneIndex = static_cast<int> (zones.size()) - 1;
     return selectedZoneIndex;
@@ -842,7 +901,7 @@ void RythmeAudioProcessor::uiNoteOn (int midiNote, float velocity)
         }
     }
 
-    bool seqLoopOn = ! seqBypass.load() && (apvts.getRawParameterValue ("seqLoop")->load() > 0.5f);
+    bool seqLoopOn = (apvts.getRawParameterValue ("seqLoop")->load() > 0.5f);
     bool wasIdle = ! hasAnyHeldNote() && ! internalPlaying.load();
 
     if (midiNote >= 0 && midiNote < 128)
@@ -883,7 +942,7 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     int numSamples = buffer.getNumSamples();
     if (numSamples <= 0) return;
 
-    bool seqLoopOn = ! seqBypass.load() && (apvts.getRawParameterValue ("seqLoop")->load() > 0.5f);
+    bool seqLoopOn = (apvts.getRawParameterValue ("seqLoop")->load() > 0.5f);
     bool hostSyncOn = apvts.getRawParameterValue ("hostSync")->load() > 0.5f;
     double bpm = static_cast<double> (apvts.getRawParameterValue ("internalBpm")->load());
     bool dawPlaying = false;
@@ -1152,13 +1211,17 @@ bool RythmeAudioProcessor::savePresetMn6x (const juce::File& file)
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
     xml->setAttribute ("presetName", currentPresetName);
+    xml->setAttribute ("libraryName", libraryNameText);
     xml->setAttribute ("brandLetters", brandLetters);
     xml->setAttribute ("pluginTitleText", pluginTitleText);
     xml->setAttribute ("logoStyleId", logoStyleId);
     xml->setAttribute ("logoColourIdx", logoColourIdx);
     xml->setAttribute ("knobStyleId", knobStyleId);
+    xml->setAttribute ("knobColourIdx", knobColourIdx);
     xml->setAttribute ("faderStyleId", faderStyleId);
+    xml->setAttribute ("faderColourIdx", faderColourIdx);
     xml->setAttribute ("switchStyleId", switchStyleId);
+    xml->setAttribute ("switchColourIdx", switchColourIdx);
 
     const juce::ScopedLock sl (zoneLock);
     auto* groupsXml = xml->createNewChildElement ("GROUPS");
@@ -1244,13 +1307,17 @@ bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
 
     apvts.replaceState (juce::ValueTree::fromXml (*xml));
     currentPresetName = xml->getStringAttribute ("presetName", file.getFileNameWithoutExtension());
+    libraryNameText = xml->getStringAttribute ("libraryName", "KINETIK");
     brandLetters = xml->getStringAttribute ("brandLetters", "N6");
-    pluginTitleText = xml->getStringAttribute ("pluginTitleText", "RYTHME");
+    pluginTitleText = xml->getStringAttribute ("pluginTitleText", "NOISE MU6IX");
     logoStyleId = juce::jlimit (1, 4, xml->getIntAttribute ("logoStyleId", 1));
-    logoColourIdx = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("logoColourIdx", 0));
+    logoColourIdx = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("logoColourIdx", 11));
     knobStyleId = juce::jlimit (1, 10, xml->getIntAttribute ("knobStyleId", 1));
+    knobColourIdx = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("knobColourIdx", 11));
     faderStyleId = juce::jlimit (1, 10, xml->getIntAttribute ("faderStyleId", 1));
+    faderColourIdx = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("faderColourIdx", 11));
     switchStyleId = juce::jlimit (1, 10, xml->getIntAttribute ("switchStyleId", 1));
+    switchColourIdx = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("switchColourIdx", 11));
     currentPresetFile = file;
 
     if (auto* groupsXml = xml->getChildByName ("GROUPS"))
@@ -1307,7 +1374,7 @@ bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
                 z.rootKey = zx->getIntAttribute ("rootKey", 60);
                 z.lowVel = zx->getIntAttribute ("lowVel", 0);
                 z.highVel = zx->getIntAttribute ("highVel", 127);
-                z.colourIndex = zx->getIntAttribute ("colIdx", 0);
+                z.colourIndex = zx->getIntAttribute ("colIdx", 11);
                 z.colour = getPaletteColour (z.colourIndex);
                 z.realRREnabled = zx->getIntAttribute ("realRR", 1) != 0;
 

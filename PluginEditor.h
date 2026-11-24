@@ -6,14 +6,13 @@
 #include <vector>
 #include <map>
 
-// Custom 10-Style Horizontal Fader (ignores mouse wheel scroll so scrolling EDIT page never alters values!)
 class StyledHorizontalFader : public juce::Component
 {
 public:
     StyledHorizontalFader (const juce::String& labelText, double minV, double maxV, double defaultV, int decimals = 2);
     void setValue (double v, bool notify = false);
     double getValue() const { return currentValue; }
-    void setStyleId (int id) { styleId = juce::jlimit (1, 10, id); repaint(); }
+    void setStyleAndColour (int id, juce::Colour col);
     void setLabelText (const juce::String& t) { title = t; repaint(); }
     std::function<void(double)> onValueChanged;
 
@@ -29,6 +28,7 @@ private:
     int numDecimals = 2;
     double currentValue = 0.0;
     int styleId = 1;
+    juce::Colour accentCol { 0xfff2f4f8 };
     bool isEditingText = false;
     juce::TextEditor editor;
 
@@ -37,14 +37,13 @@ private:
     void commitText();
 };
 
-// Center-Zero Panning Fader (-50 .. 0 .. +50) - Left/Right Drag only, Right-Click Type-In, Double-Left-Click = 0
 class CenterZeroPanFader : public juce::Component
 {
 public:
     CenterZeroPanFader (const juce::String& labelText);
     void setValue (float v, bool notify = false);
     float getValue() const { return value; }
-    void setStyleId (int id) { styleId = juce::jlimit (1, 10, id); repaint(); }
+    void setStyleAndColour (int id, juce::Colour col);
     std::function<void(float)> onValueChanged;
 
     void paint (juce::Graphics& g) override;
@@ -57,6 +56,7 @@ private:
     juce::String title;
     float value = 0.0f;
     int styleId = 1;
+    juce::Colour accentCol { 0xfff2f4f8 };
     bool isEditingText = false;
     juce::TextEditor editor;
 
@@ -65,11 +65,6 @@ private:
     void commitText();
 };
 
-// Type-In + Vertical Mouse Drag Box:
-// - Left-Drag UP/DOWN adjusts value
-// - Single RIGHT-CLICK opens Type-In editor
-// - DOUBLE LEFT-CLICK resets to Default
-// - Ignores mouse wheel scroll so scrolling EDIT page never alters values!
 class DragTypeNumberBox : public juce::Component
 {
 public:
@@ -77,7 +72,7 @@ public:
                        double minV, double maxV, double defaultV, int decimals = 1, bool showTopLabel = true);
     void setValue (double v, bool notify = false);
     double getValue() const { return currentValue; }
-    void setStyleId (int id) { styleId = juce::jlimit (1, 10, id); repaint(); }
+    void setStyleAndColour (int id, juce::Colour col);
     std::function<void(double)> onValueChanged;
 
     void paint (juce::Graphics& g) override;
@@ -96,6 +91,7 @@ private:
     double dragStartValue = 0.0;
     int dragStartY = 0;
     int styleId = 1;
+    juce::Colour accentCol { 0xfff2f4f8 };
     bool isEditingText = false;
 
     juce::TextEditor editor;
@@ -104,7 +100,6 @@ private:
     juce::String formatDisplay() const;
 };
 
-// Vector Gear / Screw Button (draws clean 8-tooth gear without Unicode box glitches)
 class GearIconButton : public juce::Button
 {
 public:
@@ -112,17 +107,63 @@ public:
     void paintButton (juce::Graphics& g, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
 };
 
-// Custom 10-Style Switch Button (actually changes shape/indicator style 1..10, not just colour)
+class EditModeIconButton : public juce::Button
+{
+public:
+    EditModeIconButton();
+    void paintButton (juce::Graphics& g, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
+};
+
 class StyledSwitchButton : public juce::TextButton
 {
 public:
-    StyledSwitchButton (const juce::String& text);
-    void setStyleId (int id, juce::Colour activeC);
+    StyledSwitchButton (const juce::String& text, bool isToggleable = true);
+    void setStyleAndColour (int id, juce::Colour activeC);
     void paintButton (juce::Graphics& g, bool over, bool down) override;
 
 private:
     int styleId = 1;
-    juce::Colour activeCol { 0xff4ca3ff };
+    juce::Colour activeCol { 0xfff2f4f8 };
+};
+
+// Header Title Button ("NOISE MU6IX") with 50%, 75%, 100% (Default), 120%, 150% UI scale popup
+class PermanentTitleScaleButton : public juce::Component
+{
+public:
+    PermanentTitleScaleButton (RythmeAudioProcessor& p, std::function<void(float)> onScaleSelected);
+    void paint (juce::Graphics& g) override;
+    void mouseDown (const juce::MouseEvent&) override;
+
+private:
+    RythmeAudioProcessor& processor;
+    std::function<void(float)> onScale;
+};
+
+// Preset Dropdown (v) + Editable Library Name Box (default "KINETIK") + Save Icon Button
+class PresetBarWidget : public juce::Component
+{
+public:
+    PresetBarWidget (RythmeAudioProcessor& p,
+                     std::function<void()> onSaveClicked,
+                     std::function<void(const juce::File&)> onLoadFile,
+                     std::function<void()> onSetRootFolder);
+
+    void refreshTextFromProcessor();
+    void resized() override;
+    void paint (juce::Graphics& g) override;
+
+private:
+    RythmeAudioProcessor& processor;
+    std::function<void()> saveCb;
+    std::function<void(const juce::File&)> loadFileCb;
+    std::function<void()> setRootCb;
+
+    juce::TextButton dropdownBtn { "v" };
+    juce::TextEditor libNameEditor;
+    juce::TextButton saveIconBtn;
+
+    void openCascadingPresetMenu();
+    void buildFolderSubMenu (juce::PopupMenu& menu, const juce::File& dir, int& nextId, std::map<int, juce::File>& idMap);
 };
 
 class AdsrGraphComponent : public juce::Component
@@ -145,33 +186,6 @@ public:
 private:
     RythmeAudioProcessor& processor;
     int slotIdx = 0;
-};
-
-class BrandLogoHeader : public juce::Component
-{
-public:
-    BrandLogoHeader (RythmeAudioProcessor& p, std::function<void()> onClickMenu);
-    void paint (juce::Graphics& g) override;
-    void mouseDown (const juce::MouseEvent&) override { if (onClick) onClick(); }
-
-private:
-    RythmeAudioProcessor& processor;
-    std::function<void()> onClick;
-};
-
-class MountedSoundCard : public juce::Component
-{
-public:
-    MountedSoundCard (std::function<void()> onCloseClicked);
-    void setItem (const juce::String& name, bool active);
-    void paint (juce::Graphics& g) override;
-    void resized() override;
-
-private:
-    juce::String itemName;
-    bool active = false;
-    juce::TextButton closeBtn { "X" };
-    std::function<void()> onClose;
 };
 
 class LiveMainWaveDisplay : public juce::Component
@@ -283,7 +297,7 @@ private:
     float snapToGrid (float normX) const;
 };
 
-// Accurate Coordinate-Aware Inline Layout Customize Overlay (Default Grid 20x!)
+// Layout Customize Overlay with Delete + Reset + DONE + Fader/Knob/Switch Style & Colour selectors
 class LayoutCustomizeOverlay : public juce::Component
 {
 public:
@@ -293,9 +307,13 @@ public:
         juce::Component* comp = nullptr;
     };
 
-    LayoutCustomizeOverlay();
+    LayoutCustomizeOverlay (std::function<void(const juce::String&)> onDeleteKey);
     void setTargets (std::vector<TargetEntry> items);
     void setGridStep (int px) { gridStepPx = px; repaint(); }
+    void deleteSelectedOrMarked();
+    void clearPendingDeletes();
+    const std::set<juce::String>& getPendingDeleteKeys() const { return pendingDeleteKeys; }
+
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
@@ -303,17 +321,18 @@ public:
 
 private:
     std::vector<TargetEntry> targets;
-    int gridStepPx = 20; // Default 20x as requested!
+    int gridStepPx = 20;
     int activeIdx = -1;
     bool isResizing = false;
     juce::Point<int> dragStart;
     juce::Rectangle<int> startLocalBounds;
+    std::set<juce::String> pendingDeleteKeys;
+    std::function<void(const juce::String&)> onDeleteCallback;
 
     int snap (int v) const;
 };
 
-class MainPluginView : public juce::Component,
-                       public juce::ListBoxModel
+class MainPluginView : public juce::Component
 {
 public:
     enum class ActiveTab { Main = 0, Edit };
@@ -321,11 +340,6 @@ public:
     MainPluginView (RythmeAudioProcessor& p, std::function<void(float)> onScaleSelected);
     void paint (juce::Graphics& g) override;
     void resized() override;
-
-    int getNumRows() override;
-    void paintListBoxItem (int rowNumber, juce::Graphics& g, int width, int height, bool rowIsSelected) override;
-    void listBoxItemClicked (int row, const juce::MouseEvent&) override;
-    void listBoxItemDoubleClicked (int row, const juce::MouseEvent&) override;
 
     void handleFilesDropped (const juce::StringArray& files, int localX, int localY);
     void syncPerZoneControls();
@@ -339,86 +353,66 @@ private:
     std::function<void(float)> scaleCallback;
     ActiveTab activeTab = ActiveTab::Main;
     bool layoutEditMode = false;
-    bool brandSettingsVisible = false;
 
     std::map<juce::String, juce::Rectangle<int>> mainCustomBounds;
     std::map<juce::String, juce::Rectangle<int>> editCustomBounds;
+    std::set<juce::String> mainHiddenKeys;
+    std::set<juce::String> editHiddenKeys;
 
-    BrandLogoHeader brandHeader;
-
-    juce::TextButton addLibBtn { "+ ADD LIBRARY" };
-    juce::TextButton sortAzBtn { "A-Z" };
-    juce::TextButton delLibBtn { "DEL" };
-
-    struct VisibleLibRow
-    {
-        bool isCategory = false;
-        int catIdx = -1;
-        juce::String label;
-        bool expanded = false;
-        juce::File file;
-    };
-    std::vector<VisibleLibRow> visibleLibRows;
-    juce::ListBox libraryList;
-
-    juce::TextButton tabMainBtn { "MAIN" };
-    juce::TextButton tabEditBtn { "EDIT" };
-    juce::TextEditor presetNameBox;
-    juce::TextButton saveBtn { "SAVE" };
-    juce::TextButton saveAsBtn { "SAVE AS" };
+    PermanentTitleScaleButton titleScaleBtn;
+    PresetBarWidget presetBar;
+    EditModeIconButton editModeBtn;
     GearIconButton topGearBtn;
 
     // ---------------- MAIN TAB ----------------
-    MountedSoundCard mountedCard;
     LiveMainWaveDisplay mainWaveDisplay;
     juce::Label rhythmSeqHeaderLbl;
-    StyledSwitchButton seqBypassBtn { "Bypass" };
     RhythmSequencerComponent seqComp;
-    juce::TextButton playPauseBtn { "PLAY" };
-    juce::ToggleButton hostSyncBtn { "SYNC" };
+    StyledSwitchButton playPauseBtn { "PLAY", false };
+    StyledSwitchButton hostSyncBtn { "SYNC", true };
     DragTypeNumberBox bpmBox { "BPM", "", 40.0, 240.0, 120.0, 1, true };
     StyledHorizontalFader shuffleFader { "Shuffle", 0.0, 1.0, 0.0, 2 };
     StyledHorizontalFader timeRandFader { "Time Rnd", 0.0, 1.0, 0.0, 2 };
     StyledHorizontalFader velRandFader { "Vel Rnd", 0.0, 1.0, 0.0, 2 };
     juce::Label gridLabel;
     juce::ComboBox gridBox;
-    juce::ToggleButton seqLoopBtn { "LOOP" };
-    juce::TextButton seqClearBtn { "Clr" };
+    StyledSwitchButton seqLoopBtn { "LOOP", true };
+    StyledSwitchButton seqClearBtn { "Clr", false };
 
     // ---------------- EDIT TAB ----------------
     juce::Viewport editViewport;
     juce::Component editContent;
 
-    juce::TextButton addGroupBtn { "+ Grp" };
-    juce::TextButton delGroupBtn { "Del Grp" };
+    StyledSwitchButton addGroupBtn { "+ Grp", false };
+    StyledSwitchButton delGroupBtn { "Del Grp", false };
     juce::ComboBox groupSelectBox;
     juce::TextEditor groupNameEdit;
-    StyledSwitchButton groupMuteBtn { "M" };
-    StyledSwitchButton groupSoloBtn { "S" };
-    StyledSwitchButton selGroupOnlyBtn { "Sel Grp" };
+    StyledSwitchButton groupMuteBtn { "M", true };
+    StyledSwitchButton groupSoloBtn { "S", true };
+    StyledSwitchButton selGroupOnlyBtn { "Sel Grp", true };
     juce::ComboBox groupKsBox;
-    DragTypeNumberBox grpVolBox { "Group Vol", " dB", 0.0, 100.0, 80.0, 0 };
+    StyledHorizontalFader grpVolFader { "Group Vol", 0.0, 100.0, 80.0, 0 };
     CenterZeroPanFader grpPanFader { "Group Pan" };
 
-    StyledSwitchButton frrBtn { "FRR" };
-    StyledSwitchButton fvlBtn { "FVL" };
-    StyledSwitchButton pitchTrackBtn { "PITCH" };
-    juce::TextButton selectAllZonesBtn { "ALL" };
-    juce::TextButton delZoneBtn { "Del" };
-    juce::TextButton autoGridBtn { "Auto Grid" };
+    StyledSwitchButton frrBtn { "FRR", true };
+    StyledSwitchButton fvlBtn { "FVL", true };
+    StyledSwitchButton pitchTrackBtn { "PITCH", true };
+    StyledSwitchButton selectAllZonesBtn { "ALL", false };
+    StyledSwitchButton delZoneBtn { "Del", false };
+    StyledSwitchButton autoGridBtn { "Auto Grid", false };
     juce::ComboBox velGridBox;
     juce::ComboBox zoneColourBox;
     KeyMapperComponent editKeyMapper;
 
-    juce::TextButton wavePlayBtn { "Play" };
+    StyledSwitchButton wavePlayBtn { "Play", false };
     juce::ComboBox trackSelectBox;
-    StyledSwitchButton realRRBtn { "RR" };
-    StyledSwitchButton sampleLoopBtn { "LOOP" };
-    StyledSwitchButton autoLoopZeroBtn { "Auto Loop Z-Cross" };
+    StyledSwitchButton realRRBtn { "RR", true };
+    StyledSwitchButton sampleLoopBtn { "LOOP", true };
+    StyledSwitchButton autoLoopZeroBtn { "Auto Loop Z-Cross", true };
     StyledHorizontalFader crossfadeFader { "Crossfade", 0.0, 0.35, 0.04, 2 };
-    StyledSwitchButton reverseBtn { "REV" };
-    juce::TextButton normalizeBtn { "NORM" };
-    juce::TextButton resetZoneBtn { "Reset" };
+    StyledSwitchButton reverseBtn { "REV", true };
+    StyledSwitchButton normalizeBtn { "NORM", false };
+    StyledSwitchButton resetZoneBtn { "Reset", false };
     WaveEditorComponent waveEditor;
 
     DragTypeNumberBox pitchBox   { "Pitch", " st", -24.0, 24.0, 0.0, 1 };
@@ -431,10 +425,10 @@ private:
     DragTypeNumberBox releaseBox { "Release", " ms", 1.0, 10000.0, 250.0, 1 };
     AdsrGraphComponent adsrGraph;
 
-    StyledSwitchButton fxBypassBtn { "Bypass" };
+    StyledSwitchButton fxBypassBtn { "Bypass", true };
     juce::ComboBox fxSlotSelectBox;
     juce::ComboBox fxTypeBox;
-    StyledSwitchButton fxEnableBtn { "ON" };
+    StyledSwitchButton fxEnableBtn { "ON", true };
     FabStyleFxDisplay fxDisplay;
     StyledHorizontalFader fxP1 { "P1", 0.0, 1.0, 0.5, 2 };
     StyledHorizontalFader fxP2 { "P2", 0.0, 1.0, 0.5, 2 };
@@ -442,21 +436,18 @@ private:
     StyledHorizontalFader fxP4 { "P4", 0.0, 1.0, 0.5, 2 };
     StyledHorizontalFader fxP5 { "P5", 0.0, 1.0, 0.5, 2 };
 
-    // Top-Right Gear Inline Customize Toolbar
+    // Top-Right Gear Toolbar: Grid (Default 20x), Fader Style+Col, Knob Style+Col, Switch Style+Col, Delete, Reset, DONE
     juce::ComboBox gearGridBox;
-    juce::ComboBox gearKnobStyleBox;
     juce::ComboBox gearFaderStyleBox;
+    juce::ComboBox gearFaderColBox;
+    juce::ComboBox gearKnobStyleBox;
+    juce::ComboBox gearKnobColBox;
     juce::ComboBox gearSwitchStyleBox;
-    juce::TextButton gearResetBtn { "Reset" };
-    juce::TextButton gearDoneBtn { "DONE" };
+    juce::ComboBox gearSwitchColBox;
+    StyledSwitchButton gearDeleteBtn { "Delete", false };
+    StyledSwitchButton gearResetBtn { "Reset", false };
+    StyledSwitchButton gearDoneBtn { "DONE", false };
     LayoutCustomizeOverlay customizeOverlay;
-
-    // Logo/Title -> Settings Panel
-    juce::ComboBox brandShapeBox;
-    juce::ComboBox brandColourBox;
-    juce::TextEditor brandLettersEdit;
-    juce::TextEditor brandTitleEdit;
-    juce::TextButton brandApplyBtn { "Apply / OK" };
 
     ColorPianoStrip bottomPiano;
 
@@ -470,13 +461,12 @@ private:
     void enterLayoutCustomizeMode (bool enable);
     void saveCustomizedBoundsFromOverlay();
     void layoutEditContent (int viewportW);
-    void rebuildLibraryRows();
     void loadLibraryItem (const juce::File& file);
     void refreshGroupBoxes();
     void syncGroupControls();
     void syncFxControls();
-    void saveAsDialog();
-    void showBrandAndScaleMenu();
+    void savePresetAction();
+    void chooseRootLibraryFolder();
 };
 
 class RythmeAudioProcessorEditor : public juce::AudioProcessorEditor,
@@ -484,8 +474,8 @@ class RythmeAudioProcessorEditor : public juce::AudioProcessorEditor,
                                    public juce::Timer
 {
 public:
-    static constexpr int baseWidth = 980;
-    static constexpr int baseHeight = 620;
+    static constexpr int baseWidth = 780;
+    static constexpr int baseHeight = 636;
 
     RythmeAudioProcessorEditor (RythmeAudioProcessor&);
     ~RythmeAudioProcessorEditor() override;
