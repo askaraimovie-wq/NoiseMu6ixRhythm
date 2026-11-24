@@ -8,9 +8,11 @@
 #include <cmath>
 #include <functional>
 #include <string>
+#include <map>
+#include <set>
 
 #ifndef KINETIK_AUTO_VERSION_STR
-#define KINETIK_AUTO_VERSION_STR "v1.3.1"
+#define KINETIK_AUTO_VERSION_STR "v1.3.2"
 #endif
 
 struct FastSVF
@@ -244,6 +246,10 @@ public:
     bool savePresetMn6x (const juce::File& file);
     bool loadPresetMn6x (const juce::File& file);
 
+    void saveUiLayoutToDisk();
+    void loadUiLayoutFromDisk();
+    void refreshLibraryFolderIfMatches (const juce::File& file);
+
     void setRootLibraryFolder (const juce::File& folder);
     void addLibraryFolderPersistent (const juce::File& folder);
     void sortLibraryPersistent();
@@ -286,6 +292,14 @@ public:
     int switchStyleId = 1;
     int switchColourIdx = 11;
 
+    // Persistent UI Scale & Customize Layout State
+    float uiScale = 1.0f;
+    int customizeGridStep = 20;
+    std::map<juce::String, juce::Rectangle<int>> mainCustomBounds;
+    std::map<juce::String, juce::Rectangle<int>> editCustomBounds;
+    std::set<juce::String> mainHiddenKeys;
+    std::set<juce::String> editHiddenKeys;
+
     std::atomic<bool> selectGroupOnly { true };
     std::atomic<bool> fxBypass { false };
     std::atomic<int> activeKeyswitchNote { -1 };
@@ -322,6 +336,9 @@ private:
     bool wasTransportPlaying = false;
 
     juce::File getRegistryFile() const;
+    juce::File getUiLayoutFile() const;
+    std::unique_ptr<juce::XmlElement> createFullStateXml (bool includeUiLayout) const;
+    bool restoreFullStateFromXml (const juce::XmlElement& xml, bool restoreUiLayout);
     void scanFolderIntoCategories (const juce::File& folder);
     void saveLibraryRegistry();
     void loadLibraryRegistry();

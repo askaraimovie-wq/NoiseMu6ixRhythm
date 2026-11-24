@@ -544,7 +544,10 @@ void StyledSwitchButton::paintButton (juce::Graphics& g, bool over, bool down)
 
 // ---------------- LeftKinetikScaleButton ----------------
 LeftKinetikScaleButton::LeftKinetikScaleButton (RythmeAudioProcessor& p, std::function<void(float)> onScaleSelected)
-    : processor (p), onScale (std::move (onScaleSelected)) {}
+    : processor (p), onScale (std::move (onScaleSelected))
+{
+    setMouseCursor (juce::MouseCursor::PointingHandCursor);
+}
 
 void LeftKinetikScaleButton::paint (juce::Graphics& g)
 {
@@ -553,30 +556,46 @@ void LeftKinetikScaleButton::paint (juce::Graphics& g)
     g.fillRoundedRectangle (r, 4.0f);
     drawSketchRect (g, r.reduced (0.5f), 4.0f, 1.35f, juce::Colour (0xfff2f4f8));
 
+    auto inner = r.reduced (7.0f, 0.0f);
+    auto verRect = inner.removeFromRight (44.0f);
+
     g.setColour (juce::Colour (0xfff2f4f8));
-    g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+    g.setFont (juce::FontOptions (13.5f, juce::Font::bold));
     juce::String txt = processor.pluginTitleText.isEmpty() ? "KINETIK" : processor.pluginTitleText;
-    g.drawText (txt, r.reduced (6.0f, 0.0f), juce::Justification::centred, true);
+    g.drawText (txt, inner, juce::Justification::centredLeft, true);
+
+    g.setColour (juce::Colour (0xffcfd5df));
+    g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
+    g.drawText (processor.getBuildVersionString(), verRect.withTrimmedTop (3.0f), juce::Justification::centredRight, false);
 }
 
 void LeftKinetikScaleButton::mouseDown (const juce::MouseEvent&)
 {
+    float cur = processor.uiScale;
     juce::PopupMenu menu;
-    menu.addItem (1, "50%");
-    menu.addItem (2, "75%");
-    menu.addItem (3, "100% (Default)");
-    menu.addItem (4, "120%");
-    menu.addItem (5, "150%");
+    menu.addItem (1, "50%",            true, std::abs (cur - 0.50f) < 0.03f);
+    menu.addItem (2, "75%",            true, std::abs (cur - 0.75f) < 0.03f);
+    menu.addItem (3, "100% (Default)", true, std::abs (cur - 1.00f) < 0.03f);
+    menu.addItem (4, "125%",           true, std::abs (cur - 1.25f) < 0.03f);
+    menu.addItem (5, "150%",           true, std::abs (cur - 1.50f) < 0.03f);
 
+    juce::Component::SafePointer<LeftKinetikScaleButton> safeThis (this);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
-        [this] (int res)
+        [safeThis] (int res)
         {
-            if (! onScale) return;
-            if (res == 1) onScale (0.50f);
-            else if (res == 2) onScale (0.75f);
-            else if (res == 3) onScale (1.00f);
-            else if (res == 4) onScale (1.20f);
-            else if (res == 5) onScale (1.50f);
+            if (safeThis == nullptr || ! safeThis->onScale || res == 0) return;
+            float target = 1.0f;
+            if (res == 1) target = 0.50f;
+            else if (res == 2) target = 0.75f;
+            else if (res == 3) target = 1.00f;
+            else if (res == 4) target = 1.25f;
+            else if (res == 5) target = 1.50f;
+
+            juce::MessageManager::callAsync ([safeThis, target]()
+            {
+                if (safeThis != nullptr && safeThis->onScale)
+                    safeThis->onScale (target);
+            });
         });
 }
 
@@ -584,8 +603,10 @@ void LeftKinetikScaleButton::mouseDown (const juce::MouseEvent&)
 PresetBarWidget::PresetBarWidget (RythmeAudioProcessor& p,
                                 std::function<void()> onSaveClicked,
                                 std::function<void(const juce::File&)> onLoadFile,
-                                std::function<void()> onSetRootFolder)
-    : processor (p), saveCb (std::move (onSaveClicked)), loadFileCb (std::move (onLoadFile)), setRootCb (std::move (onSetRootFolder))
+                                std::function<void()> onSetRootFolder,
+                                std::function<void()> onBrowseLoadPreset)
+    : processor (p), saveCb (std::move (onSaveClicked)), loadFileCb (std::move (onLoadFile)),
+      setRootCb (std::move (onSetRootFolder)), browseLoadCb (std::move (onBrowseLoadPreset))
 {
     dropdownBtn.setButtonText ("v");
     dropdownBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff0e1014));
@@ -595,8 +616,8 @@ PresetBarWidget::PresetBarWidget (RythmeAudioProcessor& p,
 
     libNameEditor.setMultiLine (false);
     libNameEditor.setJustification (juce::Justification::centred);
-    libNameEditor.setTextToShowWhenEmpty ("KINETIK", juce::Colour (0xfff2f4f8));
-    libNameEditor.setText (processor.libraryNameText.isEmpty() ? "KINETIK" : processor.libraryNameText, juce::dontSendNotification);
+    libNameEditor.setTextToShowWhenEmpty ("- - - - - - - - -", juce::Colour (0xff9aa4b5));
+    libNameEditor.setText (processor.libraryNameText, juce::dontSendNotification);
     libNameEditor.setFont (juce::FontOptions (12.0f, juce::Font::bold));
     libNameEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff07080a));
     libNameEditor.setColour (juce::TextEditor::textColourId, juce::Colour (0xfff2f4f8));
@@ -609,7 +630,7 @@ PresetBarWidget::PresetBarWidget (RythmeAudioProcessor& p,
     addAndMakeVisible (libNameEditor);
 
     saveIconBtn.setButtonText ("[S]");
-    saveIconBtn.setTooltip ("Save Preset");
+    saveIconBtn.setTooltip ("Save Preset (.mn6x)");
     saveIconBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff0e1014));
     saveIconBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f4f8));
     saveIconBtn.onClick = [this]() { if (saveCb) saveCb(); };
@@ -618,7 +639,18 @@ PresetBarWidget::PresetBarWidget (RythmeAudioProcessor& p,
 
 void PresetBarWidget::refreshTextFromProcessor()
 {
-    libNameEditor.setText (processor.libraryNameText.isEmpty() ? "KINETIK" : processor.libraryNameText, juce::dontSendNotification);
+    libNameEditor.setText (processor.libraryNameText, juce::dontSendNotification);
+}
+
+void PresetBarWidget::flashSavedFeedback (bool success)
+{
+    saveIconBtn.setButtonText (success ? "OK" : "ERR");
+    juce::Component::SafePointer<PresetBarWidget> safeThis (this);
+    juce::Timer::callAfterDelay (1100, [safeThis]()
+    {
+        if (safeThis != nullptr)
+            safeThis->saveIconBtn.setButtonText ("[S]");
+    });
 }
 
 // ---------------- UnifiedGridBox ----------------
@@ -666,36 +698,35 @@ void TopIoMeterAndMasterKnob::paint (juce::Graphics& g)
 
     auto knobR = getKnobBounds();
     auto meterArea = r.reduced (6.0f, 3.0f).withRight (knobR.getX() - 8.0f);
-    float halfW = (meterArea.getWidth() - 8.0f) * 0.5f;
+    float rowH = (meterArea.getHeight() - 3.0f) * 0.5f;
 
-    auto bar1Box = meterArea.removeFromLeft (halfW);
-    meterArea.removeFromLeft (8.0f);
-    auto bar2Box = meterArea;
+    auto topLeftBar  = meterArea.removeFromTop (rowH);
+    meterArea.removeFromTop (3.0f);
+    auto botRightBar = meterArea;
 
-    float lvlL = juce::jlimit (0.0f, 1.0f, processor.outputMeterL.load());
-    float lvlR = juce::jlimit (0.0f, 1.0f, processor.outputMeterR.load());
+    float lvlL = std::pow (juce::jlimit (0.0f, 1.0f, processor.outputMeterL.load()), 0.58f);
+    float lvlR = std::pow (juce::jlimit (0.0f, 1.0f, processor.outputMeterR.load()), 0.58f);
 
-    auto drawMeterStrip = [&g] (juce::Rectangle<float> box, float lvl)
+    auto drawMeterLine = [&g] (juce::Rectangle<float> bar, float lvl)
     {
-        auto bar = box.reduced (0.5f, 3.0f);
-        g.setColour (juce::Colour (0xff161920));
-        g.fillRoundedRectangle (bar, 2.0f);
+        g.setColour (juce::Colour (0xff14171e));
+        g.fillRoundedRectangle (bar, 1.5f);
         g.setColour (juce::Colour (0xfff2f4f8));
-        g.drawRoundedRectangle (bar, 2.0f, 0.9f);
+        g.drawRoundedRectangle (bar, 1.5f, 0.85f);
 
-        int segs = 22;
+        int segs = 44;
         float sw = (bar.getWidth() - 4.0f) / segs;
         for (int i = 0; i < segs; ++i)
         {
-            float thresh = (i + 0.5f) / static_cast<float> (segs);
+            float thresh = (i + 0.4f) / static_cast<float> (segs);
             bool lit = (lvl >= thresh);
-            g.setColour (lit ? juce::Colours::white : juce::Colour (0xff232732));
-            g.fillRect (bar.getX() + 2.0f + i * sw, bar.getY() + 2.0f, std::max (1.5f, sw - 1.5f), bar.getHeight() - 4.0f);
+            g.setColour (lit ? juce::Colours::white : juce::Colour (0xff222630));
+            g.fillRect (bar.getX() + 2.0f + i * sw, bar.getY() + 1.5f, std::max (1.5f, sw - 1.5f), std::max (1.5f, bar.getHeight() - 3.0f));
         }
     };
 
-    drawMeterStrip (bar1Box, lvlL);
-    drawMeterStrip (bar2Box, lvlR);
+    drawMeterLine (topLeftBar, lvlL);
+    drawMeterLine (botRightBar, lvlR);
 
     // Master Volume Knob (0 dB center, no text label)
     float db = processor.masterGainDb.load();
@@ -856,6 +887,7 @@ void PresetBarWidget::openCascadingPresetMenu()
 {
     juce::PopupMenu menu;
     menu.addItem (1, "Set Root Library Folder...");
+    menu.addItem (2, "Load Preset (.mn6x)...");
     menu.addSeparator();
 
     int nextId = 100;
@@ -890,6 +922,11 @@ void PresetBarWidget::openCascadingPresetMenu()
             if (res == 1)
             {
                 if (setRootCb) setRootCb();
+                return;
+            }
+            if (res == 2)
+            {
+                if (browseLoadCb) browseLoadCb();
                 return;
             }
             auto it = idMap.find (res);
@@ -1130,17 +1167,25 @@ void ColorPianoStrip::paint (juce::Graphics& g)
 
         bool isKs = processor.isKeyswitchNote (note);
         bool isMapped = false;
-        for (const auto& z : processor.zones)
+        juce::Colour mappedCol (0xfff2f4f8);
+        for (int zIdx = 0; zIdx < static_cast<int> (processor.zones.size()); ++zIdx)
+        {
+            const auto& z = processor.zones[static_cast<size_t> (zIdx)];
             if (note >= z.lowKey && note <= z.highKey)
+            {
+                if (! isMapped || zIdx == processor.selectedZoneIndex || z.groupIndex == processor.selectedGroupIndex)
+                    mappedCol = z.colour;
                 isMapped = true;
+            }
+        }
 
         bool isPressed = (note == pressedNote || note == activeNote);
         if (isPressed)
-            g.setColour (isBlack ? juce::Colours::white : juce::Colour (0xff4a5262));
+            g.setColour (isMapped ? mappedCol.brighter (0.45f) : (isBlack ? juce::Colours::white : juce::Colour (0xff596578)));
         else if (isKs)
-            g.setColour (note == activeKs ? juce::Colour (0xfff2f4f8) : juce::Colour (0xff8c95a6));
+            g.setColour (note == activeKs ? juce::Colour (0xffee5253) : juce::Colour (0xffa8383b));
         else if (isMapped)
-            g.setColour (isBlack ? juce::Colour (0xff6b7485) : juce::Colour (0xffe8ecf4));
+            g.setColour (isBlack ? mappedCol.darker (0.38f) : mappedCol);
         else
             g.setColour (isBlack ? juce::Colour (0xff0e1015) : juce::Colour (0xfff2f4f8));
 
@@ -1151,8 +1196,8 @@ void ColorPianoStrip::paint (juce::Graphics& g)
         if (isPressed)
         {
             g.setColour (juce::Colours::white);
-            g.drawRect (kr.reduced (0.5f), 1.4f);
-            g.fillEllipse (kr.getCentreX() - 2.0f, kr.getY() + 3.0f, 4.0f, 4.0f);
+            g.drawRect (kr.reduced (0.5f), 1.5f);
+            g.fillEllipse (kr.getCentreX() - 2.2f, kr.getY() + 3.0f, 4.4f, 4.4f);
         }
 
         if (n == 0)
@@ -1369,10 +1414,10 @@ void KeyMapperComponent::paint (juce::Graphics& g)
         auto r = getZoneRect (z, gridArea);
         bool isSelected = (! readOnly && selectedZoneIndices.count (i) > 0) || (readOnly && i == processor.selectedZoneIndex);
 
-        g.setColour (isSelected ? juce::Colour (0x66ffffff) : juce::Colour (0x2effffff));
+        g.setColour (z.colour.withAlpha (isSelected ? 0.62f : 0.34f));
         g.fillRect (r);
-        g.setColour (isSelected ? juce::Colours::white : juce::Colour (0xfff2f4f8));
-        g.drawRect (r, isSelected ? 2.0f : 1.0f);
+        g.setColour (isSelected ? juce::Colours::white : z.colour);
+        g.drawRect (r, isSelected ? 2.0f : 1.1f);
 
         juce::String label = z.name;
         if (z.layers.size() > 1) label += " (" + juce::String (z.layers.size()) + "RR)";
@@ -1401,13 +1446,22 @@ void KeyMapperComponent::paint (juce::Graphics& g)
 
         bool isKs = processor.isKeyswitchNote (note);
         bool isMapped = false;
-        for (const auto& z : processor.zones)
-            if (isZoneVisibleInMapper (z) && note >= z.lowKey && note <= z.highKey) isMapped = true;
+        juce::Colour mappedCol (0xfff2f4f8);
+        for (int zIdx = 0; zIdx < static_cast<int> (processor.zones.size()); ++zIdx)
+        {
+            const auto& z = processor.zones[static_cast<size_t> (zIdx)];
+            if (isZoneVisibleInMapper (z) && note >= z.lowKey && note <= z.highKey)
+            {
+                if (! isMapped || zIdx == processor.selectedZoneIndex)
+                    mappedCol = z.colour;
+                isMapped = true;
+            }
+        }
 
         if (note == pressedKey || note == activeNote) g.setColour (juce::Colours::white);
-        else if (isKs) g.setColour (note == activeKs ? juce::Colour (0xfff2f4f8) : juce::Colour (0xff8c95a6));
+        else if (isKs) g.setColour (note == activeKs ? juce::Colour (0xffee5253) : juce::Colour (0xffa8383b));
         else if (! readOnly && note == selectedRootKey) g.setColour (juce::Colour (0xffffffff));
-        else if (isMapped) g.setColour (isBlack ? juce::Colour (0xff8c95a6) : juce::Colour (0xfff2f4f8));
+        else if (isMapped) g.setColour (isBlack ? mappedCol.darker (0.38f) : mappedCol);
         else g.setColour (isBlack ? juce::Colour (0xff111318) : juce::Colour (0xfff2f4f8));
 
         g.fillRect (kr);
@@ -1862,8 +1916,9 @@ void RhythmSequencerComponent::mouseDrag (const juce::MouseEvent& e)
 void RhythmSequencerComponent::mouseUp (const juce::MouseEvent&) { draggedEventIdx = -1; repaint(); }
 
 // ---------------- LayoutCustomizeOverlay ----------------
-LayoutCustomizeOverlay::LayoutCustomizeOverlay (std::function<void(const juce::String&)> onDeleteKey)
-    : onDeleteCallback (std::move (onDeleteKey)) {}
+LayoutCustomizeOverlay::LayoutCustomizeOverlay (std::function<void(const juce::String&)> onDeleteKey,
+                                                std::function<void()> onBoundsChangedCb)
+    : onDeleteCallback (std::move (onDeleteKey)), onBoundsChangedCallback (std::move (onBoundsChangedCb)) {}
 
 void LayoutCustomizeOverlay::setTargets (std::vector<TargetEntry> items)
 {
@@ -1993,6 +2048,8 @@ void LayoutCustomizeOverlay::mouseDrag (const juce::MouseEvent& e)
 void LayoutCustomizeOverlay::mouseUp (const juce::MouseEvent&)
 {
     setMouseCursor (juce::MouseCursor::NormalCursor);
+    if (activeIdx >= 0 && onBoundsChangedCallback)
+        onBoundsChangedCallback();
     repaint();
 }
 
@@ -2039,20 +2096,36 @@ void MainPluginView::applyAllStyles()
     repaint();
 }
 
+MainPluginView::~MainPluginView()
+{
+    if (layoutEditMode)
+    {
+        saveCustomizedBoundsFromOverlay();
+        audioProcessor.saveUiLayoutToDisk();
+    }
+}
+
 MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(float)> onScaleSelected)
     : audioProcessor (p), scaleCallback (std::move (onScaleSelected)),
       leftScaleBtn (p, onScaleSelected),
       presetBar (p,
                  [this]() { savePresetAction(); },
                  [this] (const juce::File& f) { loadLibraryItem (f); },
-                 [this]() { chooseRootLibraryFolder(); }),
+                 [this]() { chooseRootLibraryFolder(); },
+                 [this]() { browseLoadPresetAction(); }),
       topIoMasterBar (p),
       mainWaveDisplay (p), seqComp (p), editKeyMapper (p), waveEditor (p),
       adsrGraph (p), fxDisplay (p),
       customizeOverlay ([this] (const juce::String& deletedKey)
       {
-          if (activeTab == ActiveTab::Main) mainHiddenKeys.insert (deletedKey);
-          else editHiddenKeys.insert (deletedKey);
+          if (activeTab == ActiveTab::Main) audioProcessor.mainHiddenKeys.insert (deletedKey);
+          else audioProcessor.editHiddenKeys.insert (deletedKey);
+          audioProcessor.saveUiLayoutToDisk();
+      },
+      [this]()
+      {
+          saveCustomizedBoundsFromOverlay();
+          audioProcessor.saveUiLayoutToDisk();
       }),
       pitchModWheels (p),
       bottomPiano (p)
@@ -2497,12 +2570,15 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     // ---------------- GEAR CUSTOMIZE CONTROLS ----------------
     addChildComponent (gearGridBox);
     gearGridBox.addItemList ({ "Grid: Free", "Grid: 10x", "Grid: 20x", "Grid: 30x", "Grid: 40x", "Grid: 50x" }, 1);
-    gearGridBox.setSelectedId (3, juce::dontSendNotification);
-    customizeOverlay.setGridStep (20);
+    int initGridId = (audioProcessor.customizeGridStep <= 0) ? 1 : juce::jlimit (2, 6, (audioProcessor.customizeGridStep / 10) + 1);
+    gearGridBox.setSelectedId (initGridId, juce::dontSendNotification);
+    customizeOverlay.setGridStep (audioProcessor.customizeGridStep);
     gearGridBox.onChange = [this]()
     {
         int id = gearGridBox.getSelectedId();
-        customizeOverlay.setGridStep (id <= 1 ? 0 : (id - 1) * 10);
+        audioProcessor.customizeGridStep = (id <= 1) ? 0 : (id - 1) * 10;
+        customizeOverlay.setGridStep (audioProcessor.customizeGridStep);
+        audioProcessor.saveUiLayoutToDisk();
     };
 
     addChildComponent (gearFaderStyleBox);
@@ -2512,6 +2588,7 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     {
         audioProcessor.faderStyleId = juce::jlimit (1, 10, gearFaderStyleBox.getSelectedId());
         applyAllStyles();
+        audioProcessor.saveUiLayoutToDisk();
     };
 
     addChildComponent (gearFaderColBox);
@@ -2522,6 +2599,7 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     {
         audioProcessor.faderColourIdx = juce::jlimit (0, RythmeAudioProcessor::numPaletteColours - 1, gearFaderColBox.getSelectedId() - 1);
         applyAllStyles();
+        audioProcessor.saveUiLayoutToDisk();
     };
 
     addChildComponent (gearKnobStyleBox);
@@ -2531,6 +2609,7 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     {
         audioProcessor.knobStyleId = juce::jlimit (1, 10, gearKnobStyleBox.getSelectedId());
         applyAllStyles();
+        audioProcessor.saveUiLayoutToDisk();
     };
 
     addChildComponent (gearKnobColBox);
@@ -2541,6 +2620,7 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     {
         audioProcessor.knobColourIdx = juce::jlimit (0, RythmeAudioProcessor::numPaletteColours - 1, gearKnobColBox.getSelectedId() - 1);
         applyAllStyles();
+        audioProcessor.saveUiLayoutToDisk();
     };
 
     addChildComponent (gearSwitchStyleBox);
@@ -2550,6 +2630,7 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     {
         audioProcessor.switchStyleId = juce::jlimit (1, 10, gearSwitchStyleBox.getSelectedId());
         applyAllStyles();
+        audioProcessor.saveUiLayoutToDisk();
     };
 
     addChildComponent (gearSwitchColBox);
@@ -2560,6 +2641,7 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     {
         audioProcessor.switchColourIdx = juce::jlimit (0, RythmeAudioProcessor::numPaletteColours - 1, gearSwitchColBox.getSelectedId() - 1);
         applyAllStyles();
+        audioProcessor.saveUiLayoutToDisk();
     };
 
     addChildComponent (gearDeleteBtn);
@@ -2570,17 +2652,32 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     {
         if (activeTab == ActiveTab::Main)
         {
-            mainCustomBounds.clear();
-            mainHiddenKeys.clear();
+            audioProcessor.mainCustomBounds.clear();
+            audioProcessor.mainHiddenKeys.clear();
+            topIoMasterBar.setVisible (true);
+            mainWaveDisplay.setVisible (true);
+            rhythmSeqHeaderLbl.setVisible (true);
+            seqComp.setVisible (true);
+            playPauseBtn.setVisible (true);
+            hostSyncBtn.setVisible (true);
+            bpmBox.setVisible (true);
+            shuffleFader.setVisible (true);
+            timeRandFader.setVisible (true);
+            velRandFader.setVisible (true);
+            gridUnit.setVisible (true);
+            seqLoopBtn.setVisible (true);
+            seqClearBtn.setVisible (true);
         }
         else
         {
-            editCustomBounds.clear();
-            editHiddenKeys.clear();
+            audioProcessor.editCustomBounds.clear();
+            audioProcessor.editHiddenKeys.clear();
+            for (int i = 0; i < editContent.getNumChildComponents(); ++i)
+                editContent.getChildComponent (i)->setVisible (true);
         }
+        audioProcessor.saveUiLayoutToDisk();
         customizeOverlay.clearPendingDeletes();
         resized();
-        if (layoutEditMode) enterLayoutCustomizeMode (true);
         customizeOverlay.repaint();
     };
 
@@ -2616,23 +2713,26 @@ void MainPluginView::chooseRootLibraryFolder()
 
 void MainPluginView::savePresetAction()
 {
-    if (audioProcessor.libraryNameText.trim().isEmpty())
-        audioProcessor.libraryNameText = "KINETIK";
-    audioProcessor.currentPresetName = audioProcessor.libraryNameText.trim();
-
-    if (audioProcessor.currentPresetFile != juce::File())
+    juce::String typedName = presetBar.getCurrentTypedText();
+    if (typedName.isNotEmpty())
     {
-        audioProcessor.savePresetMn6x (audioProcessor.currentPresetFile);
-        return;
+        audioProcessor.libraryNameText = typedName;
+        audioProcessor.currentPresetName = typedName;
     }
+    juce::String suggested = typedName.isNotEmpty() ? typedName
+                           : (audioProcessor.currentPresetName.isNotEmpty() ? audioProcessor.currentPresetName : "Preset");
 
-    auto baseDir = audioProcessor.rootLibraryFolder.isDirectory()
+    juce::File baseDir = audioProcessor.rootLibraryFolder.isDirectory()
         ? audioProcessor.rootLibraryFolder
-        : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
-    auto defaultFile = baseDir.getChildFile (audioProcessor.currentPresetName + ".mn6x");
+        : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("KINETIK Presets");
+    baseDir.createDirectory();
 
-    fileChooser = std::make_unique<juce::FileChooser> ("Save Preset (.mn6x)", defaultFile, "*.mn6x");
-    fileChooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
+    auto defaultFile = baseDir.getChildFile (suggested + ".mn6x");
+
+    fileChooser = std::make_unique<juce::FileChooser> ("Save KINETIK Preset (.mn6x)", defaultFile, "*.mn6x");
+    fileChooser->launchAsync (juce::FileBrowserComponent::saveMode
+                              | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::warnAboutOverwriting,
         [this] (const juce::FileChooser& fc)
         {
             auto f = fc.getResult();
@@ -2641,9 +2741,28 @@ void MainPluginView::savePresetAction()
                 if (! f.hasFileExtension (".mn6x")) f = f.withFileExtension (".mn6x");
                 audioProcessor.libraryNameText = f.getFileNameWithoutExtension();
                 audioProcessor.currentPresetName = audioProcessor.libraryNameText;
+                bool ok = audioProcessor.savePresetMn6x (f);
                 presetBar.refreshTextFromProcessor();
-                audioProcessor.savePresetMn6x (f);
+                presetBar.flashSavedFeedback (ok);
             }
+        });
+}
+
+void MainPluginView::browseLoadPresetAction()
+{
+    juce::File baseDir = audioProcessor.rootLibraryFolder.isDirectory()
+        ? audioProcessor.rootLibraryFolder
+        : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("KINETIK Presets");
+    if (! baseDir.isDirectory())
+        baseDir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
+
+    fileChooser = std::make_unique<juce::FileChooser> ("Load KINETIK Preset (.mn6x)", baseDir, "*.mn6x");
+    fileChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [this] (const juce::FileChooser& fc)
+        {
+            auto f = fc.getResult();
+            if (f.existsAsFile())
+                loadLibraryItem (f);
         });
 }
 
@@ -2652,13 +2771,13 @@ void MainPluginView::saveCustomizedBoundsFromOverlay()
     if (activeTab == ActiveTab::Main)
     {
         for (const auto& k : customizeOverlay.getPendingDeleteKeys())
-            mainHiddenKeys.insert (k);
+            audioProcessor.mainHiddenKeys.insert (k);
         customizeOverlay.clearPendingDeletes();
 
         auto saveIfVis = [this] (const juce::String& key, juce::Component& c)
         {
-            if (mainHiddenKeys.count (key) == 0 && c.isVisible())
-                mainCustomBounds[key] = c.getBounds();
+            if (audioProcessor.mainHiddenKeys.count (key) == 0 && c.isVisible())
+                audioProcessor.mainCustomBounds[key] = c.getBounds();
         };
         saveIfVis ("ioBar",  topIoMasterBar);
         saveIfVis ("wave",   mainWaveDisplay);
@@ -2677,13 +2796,13 @@ void MainPluginView::saveCustomizedBoundsFromOverlay()
     else
     {
         for (const auto& k : customizeOverlay.getPendingDeleteKeys())
-            editHiddenKeys.insert (k);
+            audioProcessor.editHiddenKeys.insert (k);
         customizeOverlay.clearPendingDeletes();
 
         auto saveIfVis = [this] (const juce::String& key, juce::Component& c)
         {
-            if (editHiddenKeys.count (key) == 0 && c.isVisible())
-                editCustomBounds[key] = c.getBounds();
+            if (audioProcessor.editHiddenKeys.count (key) == 0 && c.isVisible())
+                audioProcessor.editCustomBounds[key] = c.getBounds();
         };
         saveIfVis ("addGrp",  addGroupBtn);
         saveIfVis ("delGrp",  delGroupBtn);
@@ -2742,7 +2861,10 @@ void MainPluginView::saveCustomizedBoundsFromOverlay()
 void MainPluginView::enterLayoutCustomizeMode (bool enable)
 {
     if (! enable && layoutEditMode)
+    {
         saveCustomizedBoundsFromOverlay();
+        audioProcessor.saveUiLayoutToDisk();
+    }
 
     layoutEditMode = enable;
     gearGridBox.setVisible (enable);
@@ -2848,14 +2970,16 @@ void MainPluginView::loadLibraryItem (const juce::File& file)
     if (! file.existsAsFile()) return;
     if (file.hasFileExtension (".mn6x"))
     {
-        audioProcessor.loadPresetMn6x (file);
+        if (! audioProcessor.loadPresetMn6x (file)) return;
         presetBar.refreshTextFromProcessor();
-        gearFaderStyleBox.setSelectedId (audioProcessor.faderStyleId, juce::dontSendNotification);
-        gearFaderColBox.setSelectedId (audioProcessor.faderColourIdx + 1, juce::dontSendNotification);
-        gearKnobStyleBox.setSelectedId (audioProcessor.knobStyleId, juce::dontSendNotification);
-        gearKnobColBox.setSelectedId (audioProcessor.knobColourIdx + 1, juce::dontSendNotification);
-        gearSwitchStyleBox.setSelectedId (audioProcessor.switchStyleId, juce::dontSendNotification);
-        gearSwitchColBox.setSelectedId (audioProcessor.switchColourIdx + 1, juce::dontSendNotification);
+        bpmBox.setValue (audioProcessor.apvts.getRawParameterValue ("internalBpm")->load(), false);
+        shuffleFader.setValue (audioProcessor.apvts.getRawParameterValue ("shuffle")->load(), false);
+        timeRandFader.setValue (audioProcessor.apvts.getRawParameterValue ("timeRand")->load(), false);
+        velRandFader.setValue (audioProcessor.apvts.getRawParameterValue ("velRand")->load(), false);
+        fxBypassBtn.setToggleState (audioProcessor.fxBypass.load(), juce::dontSendNotification);
+        selGroupOnlyBtn.setToggleState (audioProcessor.selectGroupOnly.load(), juce::dontSendNotification);
+        editKeyMapper.setFilterToSelectedGroup (audioProcessor.selectGroupOnly.load());
+        editKeyMapper.selectSingleZone (audioProcessor.selectedZoneIndex);
         audioProcessor.setLoadedItemInPanel (file.getFileNameWithoutExtension(), file, -1);
         refreshGroupBoxes(); syncGroupControls(); syncFxControls(); applyAllStyles();
     }
@@ -2938,19 +3062,19 @@ void MainPluginView::setActiveTab (ActiveTab tab)
 
     editModeBtn.setToggleState (isEdit, juce::dontSendNotification);
 
-    topIoMasterBar.setVisible (isMain && mainHiddenKeys.count ("ioBar") == 0);
-    mainWaveDisplay.setVisible (isMain && mainHiddenKeys.count ("wave") == 0);
-    rhythmSeqHeaderLbl.setVisible (isMain && mainHiddenKeys.count ("seqHdr") == 0);
-    seqComp.setVisible (isMain && mainHiddenKeys.count ("seq") == 0);
-    playPauseBtn.setVisible (isMain && mainHiddenKeys.count ("play") == 0);
-    hostSyncBtn.setVisible (isMain && mainHiddenKeys.count ("sync") == 0);
-    bpmBox.setVisible (isMain && mainHiddenKeys.count ("bpm") == 0);
-    shuffleFader.setVisible (isMain && mainHiddenKeys.count ("shuf") == 0);
-    timeRandFader.setVisible (isMain && mainHiddenKeys.count ("trnd") == 0);
-    velRandFader.setVisible (isMain && mainHiddenKeys.count ("vrnd") == 0);
-    gridUnit.setVisible (isMain && mainHiddenKeys.count ("grid") == 0);
-    seqLoopBtn.setVisible (isMain && mainHiddenKeys.count ("loop") == 0);
-    seqClearBtn.setVisible (isMain && mainHiddenKeys.count ("clr") == 0);
+    topIoMasterBar.setVisible (isMain && audioProcessor.mainHiddenKeys.count ("ioBar") == 0);
+    mainWaveDisplay.setVisible (isMain && audioProcessor.mainHiddenKeys.count ("wave") == 0);
+    rhythmSeqHeaderLbl.setVisible (isMain && audioProcessor.mainHiddenKeys.count ("seqHdr") == 0);
+    seqComp.setVisible (isMain && audioProcessor.mainHiddenKeys.count ("seq") == 0);
+    playPauseBtn.setVisible (isMain && audioProcessor.mainHiddenKeys.count ("play") == 0);
+    hostSyncBtn.setVisible (isMain && audioProcessor.mainHiddenKeys.count ("sync") == 0);
+    bpmBox.setVisible (isMain && audioProcessor.mainHiddenKeys.count ("bpm") == 0);
+    shuffleFader.setVisible (isMain && audioProcessor.mainHiddenKeys.count ("shuf") == 0);
+    timeRandFader.setVisible (isMain && audioProcessor.mainHiddenKeys.count ("trnd") == 0);
+    velRandFader.setVisible (isMain && audioProcessor.mainHiddenKeys.count ("vrnd") == 0);
+    gridUnit.setVisible (isMain && audioProcessor.mainHiddenKeys.count ("grid") == 0);
+    seqLoopBtn.setVisible (isMain && audioProcessor.mainHiddenKeys.count ("loop") == 0);
+    seqClearBtn.setVisible (isMain && audioProcessor.mainHiddenKeys.count ("clr") == 0);
 
     editViewport.setVisible (isEdit);
 
@@ -3020,9 +3144,8 @@ void MainPluginView::handleFilesDropped (const juce::StringArray& files, int loc
             juce::File f (path);
             if (f.hasFileExtension (".mn6x"))
             {
-                audioProcessor.loadPresetMn6x (f);
-                presetBar.refreshTextFromProcessor();
-                refreshGroupBoxes(); syncGroupControls(); syncFxControls();
+                loadLibraryItem (f);
+                return;
             }
             else
             {
@@ -3053,9 +3176,8 @@ void MainPluginView::handleFilesDropped (const juce::StringArray& files, int loc
         juce::File f (path);
         if (f.hasFileExtension (".mn6x"))
         {
-            audioProcessor.loadPresetMn6x (f);
-            presetBar.refreshTextFromProcessor();
-            refreshGroupBoxes(); syncGroupControls(); syncFxControls();
+            loadLibraryItem (f);
+            return;
         }
         else if (activeTab == ActiveTab::Edit)
             audioFiles.push_back (f);
@@ -3104,88 +3226,88 @@ void MainPluginView::layoutEditContent (int viewportW)
     int y = 4;
 
     auto grpTop = juce::Rectangle<int> (4, y, contentW - 8, 28);
-    applySavedOrDefault (addGroupBtn,     editCustomBounds, editHiddenKeys, "addGrp",  grpTop.removeFromLeft (52).reduced (1));
-    applySavedOrDefault (delGroupBtn,     editCustomBounds, editHiddenKeys, "delGrp",  grpTop.removeFromLeft (56).reduced (1));
-    applySavedOrDefault (groupSelectBox,  editCustomBounds, editHiddenKeys, "grpSel",  grpTop.removeFromLeft (96).reduced (1));
-    applySavedOrDefault (groupNameEdit,   editCustomBounds, editHiddenKeys, "grpName", grpTop.removeFromLeft (100).reduced (2, 1));
-    applySavedOrDefault (groupMuteBtn,    editCustomBounds, editHiddenKeys, "grpM",    grpTop.removeFromLeft (30).reduced (1));
-    applySavedOrDefault (groupSoloBtn,    editCustomBounds, editHiddenKeys, "grpS",    grpTop.removeFromLeft (30).reduced (1));
-    applySavedOrDefault (selGroupOnlyBtn, editCustomBounds, editHiddenKeys, "selGrp",  grpTop.removeFromLeft (58).reduced (1));
-    applySavedOrDefault (groupKsBox,      editCustomBounds, editHiddenKeys, "grpKs",   grpTop.removeFromLeft (84).reduced (1));
+    applySavedOrDefault (addGroupBtn,     audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "addGrp",  grpTop.removeFromLeft (52).reduced (1));
+    applySavedOrDefault (delGroupBtn,     audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "delGrp",  grpTop.removeFromLeft (56).reduced (1));
+    applySavedOrDefault (groupSelectBox,  audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "grpSel",  grpTop.removeFromLeft (96).reduced (1));
+    applySavedOrDefault (groupNameEdit,   audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "grpName", grpTop.removeFromLeft (100).reduced (2, 1));
+    applySavedOrDefault (groupMuteBtn,    audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "grpM",    grpTop.removeFromLeft (30).reduced (1));
+    applySavedOrDefault (groupSoloBtn,    audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "grpS",    grpTop.removeFromLeft (30).reduced (1));
+    applySavedOrDefault (selGroupOnlyBtn, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "selGrp",  grpTop.removeFromLeft (58).reduced (1));
+    applySavedOrDefault (groupKsBox,      audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "grpKs",   grpTop.removeFromLeft (84).reduced (1));
     y += 32;
 
     auto grpCtrlRow = juce::Rectangle<int> (4, y, contentW - 8, 36);
     int halfGW = grpCtrlRow.getWidth() / 2;
-    applySavedOrDefault (grpVolFader, editCustomBounds, editHiddenKeys, "grpVol", grpCtrlRow.removeFromLeft (halfGW).reduced (3, 0));
-    applySavedOrDefault (grpPanFader, editCustomBounds, editHiddenKeys, "grpPan", grpCtrlRow.reduced (3, 0));
+    applySavedOrDefault (grpVolFader, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "grpVol", grpCtrlRow.removeFromLeft (halfGW).reduced (3, 0));
+    applySavedOrDefault (grpPanFader, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "grpPan", grpCtrlRow.reduced (3, 0));
     y += 40;
 
     auto mapHdr = juce::Rectangle<int> (4, y, contentW - 8, 26);
-    applySavedOrDefault (frrBtn,            editCustomBounds, editHiddenKeys, "frr",    mapHdr.removeFromLeft (46).reduced (1));
-    applySavedOrDefault (fvlBtn,            editCustomBounds, editHiddenKeys, "fvl",    mapHdr.removeFromLeft (46).reduced (1));
-    applySavedOrDefault (pitchTrackBtn,     editCustomBounds, editHiddenKeys, "pitchT", mapHdr.removeFromLeft (54).reduced (1));
-    applySavedOrDefault (selectAllZonesBtn, editCustomBounds, editHiddenKeys, "allZ",   mapHdr.removeFromLeft (40).reduced (1));
-    applySavedOrDefault (delZoneBtn,        editCustomBounds, editHiddenKeys, "delZ",   mapHdr.removeFromLeft (40).reduced (1));
-    applySavedOrDefault (autoGridBtn,       editCustomBounds, editHiddenKeys, "autoG",  mapHdr.removeFromLeft (70).reduced (1));
-    applySavedOrDefault (zoneColourBox,     editCustomBounds, editHiddenKeys, "colZ",   mapHdr.removeFromRight (108).reduced (1));
-    applySavedOrDefault (velGridBox,        editCustomBounds, editHiddenKeys, "velG",   mapHdr.removeFromRight (82).reduced (1));
+    applySavedOrDefault (frrBtn,            audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "frr",    mapHdr.removeFromLeft (46).reduced (1));
+    applySavedOrDefault (fvlBtn,            audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "fvl",    mapHdr.removeFromLeft (46).reduced (1));
+    applySavedOrDefault (pitchTrackBtn,     audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "pitchT", mapHdr.removeFromLeft (54).reduced (1));
+    applySavedOrDefault (selectAllZonesBtn, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "allZ",   mapHdr.removeFromLeft (40).reduced (1));
+    applySavedOrDefault (delZoneBtn,        audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "delZ",   mapHdr.removeFromLeft (40).reduced (1));
+    applySavedOrDefault (autoGridBtn,       audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "autoG",  mapHdr.removeFromLeft (70).reduced (1));
+    applySavedOrDefault (zoneColourBox,     audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "colZ",   mapHdr.removeFromRight (108).reduced (1));
+    applySavedOrDefault (velGridBox,        audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "velG",   mapHdr.removeFromRight (82).reduced (1));
     y += 28;
 
-    applySavedOrDefault (editKeyMapper, editCustomBounds, editHiddenKeys, "mapper", { 4, y, contentW - 8, 225 });
+    applySavedOrDefault (editKeyMapper, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "mapper", { 4, y, contentW - 8, 225 });
     y += 233;
 
     auto wavHdr = juce::Rectangle<int> (4, y, contentW - 8, 26);
-    applySavedOrDefault (wavePlayBtn,     editCustomBounds, editHiddenKeys, "wPlay",  wavHdr.removeFromLeft (44).reduced (1));
-    applySavedOrDefault (trackSelectBox,  editCustomBounds, editHiddenKeys, "trk",    wavHdr.removeFromLeft (146).reduced (1));
-    applySavedOrDefault (realRRBtn,       editCustomBounds, editHiddenKeys, "rr",     wavHdr.removeFromLeft (36).reduced (1));
-    applySavedOrDefault (sampleLoopBtn,   editCustomBounds, editHiddenKeys, "sLoop",  wavHdr.removeFromLeft (48).reduced (1));
-    applySavedOrDefault (autoLoopZeroBtn, editCustomBounds, editHiddenKeys, "zCross", wavHdr.removeFromLeft (112).reduced (1));
-    applySavedOrDefault (reverseBtn,      editCustomBounds, editHiddenKeys, "rev",    wavHdr.removeFromLeft (44).reduced (1));
-    applySavedOrDefault (normalizeBtn,    editCustomBounds, editHiddenKeys, "norm",   wavHdr.removeFromLeft (52).reduced (1));
-    applySavedOrDefault (resetZoneBtn,    editCustomBounds, editHiddenKeys, "rstZ",   wavHdr.removeFromRight (52).reduced (1));
+    applySavedOrDefault (wavePlayBtn,     audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "wPlay",  wavHdr.removeFromLeft (44).reduced (1));
+    applySavedOrDefault (trackSelectBox,  audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "trk",    wavHdr.removeFromLeft (146).reduced (1));
+    applySavedOrDefault (realRRBtn,       audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "rr",     wavHdr.removeFromLeft (36).reduced (1));
+    applySavedOrDefault (sampleLoopBtn,   audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "sLoop",  wavHdr.removeFromLeft (48).reduced (1));
+    applySavedOrDefault (autoLoopZeroBtn, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "zCross", wavHdr.removeFromLeft (112).reduced (1));
+    applySavedOrDefault (reverseBtn,      audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "rev",    wavHdr.removeFromLeft (44).reduced (1));
+    applySavedOrDefault (normalizeBtn,    audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "norm",   wavHdr.removeFromLeft (52).reduced (1));
+    applySavedOrDefault (resetZoneBtn,    audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "rstZ",   wavHdr.removeFromRight (52).reduced (1));
     y += 28;
 
-    applySavedOrDefault (waveEditor,     editCustomBounds, editHiddenKeys, "waveEd", { 4, y, contentW - 8, 165 });
+    applySavedOrDefault (waveEditor,     audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "waveEd", { 4, y, contentW - 8, 165 });
     y += 171;
 
-    applySavedOrDefault (crossfadeFader, editCustomBounds, editHiddenKeys, "xfade",  { 4, y, contentW - 8, 34 });
+    applySavedOrDefault (crossfadeFader, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "xfade",  { 4, y, contentW - 8, 34 });
     y += 38;
 
     auto ppvRow = juce::Rectangle<int> (4, y, contentW - 8, 38);
-    applySavedOrDefault (pitchBox, editCustomBounds, editHiddenKeys, "pitch", ppvRow.removeFromLeft (130).reduced (3, 0));
-    applySavedOrDefault (volBox,   editCustomBounds, editHiddenKeys, "vol",   ppvRow.removeFromRight (130).reduced (3, 0));
-    applySavedOrDefault (panFader, editCustomBounds, editHiddenKeys, "pan",   ppvRow.reduced (4, 0));
+    applySavedOrDefault (pitchBox, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "pitch", ppvRow.removeFromLeft (130).reduced (3, 0));
+    applySavedOrDefault (volBox,   audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "vol",   ppvRow.removeFromRight (130).reduced (3, 0));
+    applySavedOrDefault (panFader, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "pan",   ppvRow.reduced (4, 0));
     y += 42;
 
     auto adsrRow = juce::Rectangle<int> (4, y, contentW - 8, 42);
-    applySavedOrDefault (attackBox,  editCustomBounds, editHiddenKeys, "atk",   adsrRow.removeFromLeft (96).reduced (2, 0));
-    applySavedOrDefault (decayBox,   editCustomBounds, editHiddenKeys, "dec",   adsrRow.removeFromLeft (96).reduced (2, 0));
-    applySavedOrDefault (sustainBox, editCustomBounds, editHiddenKeys, "sus",   adsrRow.removeFromLeft (96).reduced (2, 0));
-    applySavedOrDefault (releaseBox, editCustomBounds, editHiddenKeys, "rel",   adsrRow.removeFromLeft (96).reduced (2, 0));
-    applySavedOrDefault (adsrGraph,  editCustomBounds, editHiddenKeys, "adsrG", adsrRow.reduced (4, 1));
+    applySavedOrDefault (attackBox,  audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "atk",   adsrRow.removeFromLeft (96).reduced (2, 0));
+    applySavedOrDefault (decayBox,   audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "dec",   adsrRow.removeFromLeft (96).reduced (2, 0));
+    applySavedOrDefault (sustainBox, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "sus",   adsrRow.removeFromLeft (96).reduced (2, 0));
+    applySavedOrDefault (releaseBox, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "rel",   adsrRow.removeFromLeft (96).reduced (2, 0));
+    applySavedOrDefault (adsrGraph,  audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "adsrG", adsrRow.reduced (4, 1));
     y += 52;
 
     auto fxHdr = juce::Rectangle<int> (4, y, contentW - 8, 28);
-    applySavedOrDefault (fxSlotSelectBox, editCustomBounds, editHiddenKeys, "fxSlot", fxHdr.removeFromLeft (78).reduced (1));
-    applySavedOrDefault (fxTypeBox,       editCustomBounds, editHiddenKeys, "fxType", fxHdr.removeFromLeft (112).reduced (1));
-    applySavedOrDefault (fxEnableBtn,     editCustomBounds, editHiddenKeys, "fxEn",   fxHdr.removeFromLeft (48).reduced (1));
-    applySavedOrDefault (fxBypassBtn,     editCustomBounds, editHiddenKeys, "fxByp",  fxHdr.removeFromLeft (58).reduced (1));
+    applySavedOrDefault (fxSlotSelectBox, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "fxSlot", fxHdr.removeFromLeft (78).reduced (1));
+    applySavedOrDefault (fxTypeBox,       audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "fxType", fxHdr.removeFromLeft (112).reduced (1));
+    applySavedOrDefault (fxEnableBtn,     audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "fxEn",   fxHdr.removeFromLeft (48).reduced (1));
+    applySavedOrDefault (fxBypassBtn,     audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "fxByp",  fxHdr.removeFromLeft (58).reduced (1));
     y += 32;
 
-    applySavedOrDefault (fxDisplay, editCustomBounds, editHiddenKeys, "fxDisp", { 4, y, contentW - 8, 86 });
+    applySavedOrDefault (fxDisplay, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "fxDisp", { 4, y, contentW - 8, 86 });
     y += 90;
 
     auto fxRow1 = juce::Rectangle<int> (4, y, contentW - 8, 34);
     int fxW3 = fxRow1.getWidth() / 3;
-    applySavedOrDefault (fxP1, editCustomBounds, editHiddenKeys, "fxP1", fxRow1.removeFromLeft (fxW3).reduced (3, 0));
-    applySavedOrDefault (fxP2, editCustomBounds, editHiddenKeys, "fxP2", fxRow1.removeFromLeft (fxW3).reduced (3, 0));
-    applySavedOrDefault (fxP3, editCustomBounds, editHiddenKeys, "fxP3", fxRow1.reduced (3, 0));
+    applySavedOrDefault (fxP1, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "fxP1", fxRow1.removeFromLeft (fxW3).reduced (3, 0));
+    applySavedOrDefault (fxP2, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "fxP2", fxRow1.removeFromLeft (fxW3).reduced (3, 0));
+    applySavedOrDefault (fxP3, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "fxP3", fxRow1.reduced (3, 0));
     y += 38;
 
     auto fxRow2 = juce::Rectangle<int> (4, y, contentW - 8, 34);
     int fxW2 = fxRow2.getWidth() / 2;
-    applySavedOrDefault (fxP4, editCustomBounds, editHiddenKeys, "fxP4", fxRow2.removeFromLeft (fxW2).reduced (3, 0));
-    applySavedOrDefault (fxP5, editCustomBounds, editHiddenKeys, "fxP5", fxRow2.reduced (3, 0));
+    applySavedOrDefault (fxP4, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "fxP4", fxRow2.removeFromLeft (fxW2).reduced (3, 0));
+    applySavedOrDefault (fxP5, audioProcessor.editCustomBounds, audioProcessor.editHiddenKeys, "fxP5", fxRow2.reduced (3, 0));
     y += 44;
 
     int maxBottom = y + 8;
@@ -3199,9 +3321,7 @@ void MainPluginView::paint (juce::Graphics& g)
     g.fillAll (juce::Colour (0xff07080a));
     drawSketchRect (g, getLocalBounds().toFloat().reduced (3.0f), 6.0f, 1.4f, juce::Colour (0xfff2f4f8));
 
-    g.setColour (juce::Colour (0xfff2f4f8));
-    g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-    g.drawText (audioProcessor.getBuildVersionString(), getWidth() - 84, getHeight() - 19, 74, 14, juce::Justification::centredRight);
+    // Version string is displayed right next to the KINETIK title at top-left
 
     if (activeTab == ActiveTab::Edit && editViewport.isVisible())
     {
@@ -3218,21 +3338,20 @@ void MainPluginView::paint (juce::Graphics& g)
 
 void MainPluginView::resized()
 {
-    auto area = getLocalBounds().reduced (10, 6);
-    auto bottomStrip = area.removeFromBottom (62);
-    bottomStrip.removeFromTop (14); // Room above keyboard so version text sits cleanly above right edge
-    auto keyRow = bottomStrip.removeFromTop (44);
-    pitchModWheels.setBounds (keyRow.removeFromLeft (44).reduced (0, 1));
+    auto area = getLocalBounds().reduced (10, 8);
+    auto keyRow = area.removeFromBottom (46);
+    pitchModWheels.setBounds (keyRow.removeFromLeft (46).reduced (0, 1));
     keyRow.removeFromLeft (4);
     bottomPiano.setBounds (keyRow.reduced (0, 1));
+    area.removeFromBottom (4);
 
-    // Top bar: KINETIK in top-left corner, wider PresetBar filling center space, Edit + Gear icons on the right
+    // Top bar: KINETIK + version in top-left corner, wide PresetBar in center, Edit + Gear on right
     auto topBar = area.removeFromTop (34);
-    leftScaleBtn.setBounds (topBar.removeFromLeft (104).reduced (1));
+    leftScaleBtn.setBounds (topBar.removeFromLeft (142).reduced (1));
     topGearBtn.setBounds   (topBar.removeFromRight (32).reduced (1));
     editModeBtn.setBounds  (topBar.removeFromRight (32).reduced (1));
-    topBar.removeFromLeft (14);
-    topBar.removeFromRight (14);
+    topBar.removeFromLeft (12);
+    topBar.removeFromRight (12);
     presetBar.setBounds (topBar.reduced (0, 1));
 
     auto workArea = area;
@@ -3240,15 +3359,15 @@ void MainPluginView::resized()
     if (activeTab == ActiveTab::Main)
     {
         auto mainBody = area;
-        mainBody.removeFromTop (4);
-        auto defIoBar = mainBody.removeFromTop (24);
-        mainBody.removeFromTop (4);
-        auto defWave = mainBody.removeFromTop (148);
+        mainBody.removeFromTop (5);
+        auto defIoBar = mainBody.removeFromTop (28);
+        mainBody.removeFromTop (5);
+        auto defWave = mainBody.removeFromTop (152);
         mainBody.removeFromTop (6);
         auto seqHdr = mainBody.removeFromTop (19);
         auto defSeqHdr = seqHdr.removeFromLeft (200);
         mainBody.removeFromTop (3);
-        auto defSeq = mainBody.removeFromTop (214);
+        auto defSeq = mainBody.removeFromTop (216);
 
         mainBody.removeFromTop (8);
         auto bottomCtrl = mainBody.removeFromTop (46);
@@ -3263,19 +3382,19 @@ void MainPluginView::resized()
         auto defLoop = bottomCtrl.removeFromLeft (56).reduced (2, 4);
         auto defClr  = bottomCtrl.removeFromLeft (46).reduced (2, 4);
 
-        applySavedOrDefault (topIoMasterBar,     mainCustomBounds, mainHiddenKeys, "ioBar",  defIoBar);
-        applySavedOrDefault (mainWaveDisplay,    mainCustomBounds, mainHiddenKeys, "wave",   defWave);
-        applySavedOrDefault (rhythmSeqHeaderLbl, mainCustomBounds, mainHiddenKeys, "seqHdr", defSeqHdr);
-        applySavedOrDefault (seqComp,            mainCustomBounds, mainHiddenKeys, "seq",    defSeq);
-        applySavedOrDefault (playPauseBtn,       mainCustomBounds, mainHiddenKeys, "play",   defPlay);
-        applySavedOrDefault (hostSyncBtn,        mainCustomBounds, mainHiddenKeys, "sync",   defSync);
-        applySavedOrDefault (bpmBox,             mainCustomBounds, mainHiddenKeys, "bpm",    defBpm);
-        applySavedOrDefault (shuffleFader,       mainCustomBounds, mainHiddenKeys, "shuf",   defShuf);
-        applySavedOrDefault (timeRandFader,      mainCustomBounds, mainHiddenKeys, "trnd",   defTrnd);
-        applySavedOrDefault (velRandFader,       mainCustomBounds, mainHiddenKeys, "vrnd",   defVrnd);
-        applySavedOrDefault (gridUnit,           mainCustomBounds, mainHiddenKeys, "grid",   defGrid);
-        applySavedOrDefault (seqLoopBtn,         mainCustomBounds, mainHiddenKeys, "loop",   defLoop);
-        applySavedOrDefault (seqClearBtn,        mainCustomBounds, mainHiddenKeys, "clr",    defClr);
+        applySavedOrDefault (topIoMasterBar,     audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "ioBar",  defIoBar);
+        applySavedOrDefault (mainWaveDisplay,    audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "wave",   defWave);
+        applySavedOrDefault (rhythmSeqHeaderLbl, audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "seqHdr", defSeqHdr);
+        applySavedOrDefault (seqComp,            audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "seq",    defSeq);
+        applySavedOrDefault (playPauseBtn,       audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "play",   defPlay);
+        applySavedOrDefault (hostSyncBtn,        audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "sync",   defSync);
+        applySavedOrDefault (bpmBox,             audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "bpm",    defBpm);
+        applySavedOrDefault (shuffleFader,       audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "shuf",   defShuf);
+        applySavedOrDefault (timeRandFader,      audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "trnd",   defTrnd);
+        applySavedOrDefault (velRandFader,       audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "vrnd",   defVrnd);
+        applySavedOrDefault (gridUnit,           audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "grid",   defGrid);
+        applySavedOrDefault (seqLoopBtn,         audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "loop",   defLoop);
+        applySavedOrDefault (seqClearBtn,        audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "clr",    defClr);
 
         if (layoutEditMode)
         {
@@ -3313,32 +3432,30 @@ void MainPluginView::resized()
     else
     {
         auto editArea = area;
-        if (layoutEditMode)
-        {
-            auto barArea = editArea.removeFromTop (58);
-            auto gRow1 = barArea.removeFromTop (27);
-            gearGridBox.setBounds        (gRow1.removeFromLeft (92).reduced (1));
-            gearFaderStyleBox.setBounds  (gRow1.removeFromLeft (92).reduced (1));
-            gearFaderColBox.setBounds  (gRow1.removeFromLeft (120).reduced (1));
-            gearKnobStyleBox.setBounds   (gRow1.removeFromLeft (92).reduced (1));
-            gearKnobColBox.setBounds   (gRow1.removeFromLeft (120).reduced (1));
-
-            barArea.removeFromTop (2);
-            auto gRow2 = barArea.removeFromTop (27);
-            gearSwitchStyleBox.setBounds (gRow2.removeFromLeft (92).reduced (1));
-            gearSwitchColBox.setBounds (gRow2.removeFromLeft (120).reduced (1));
-            gearDoneBtn.setBounds        (gRow2.removeFromRight (64).reduced (1));
-            gearResetBtn.setBounds       (gRow2.removeFromRight (60).reduced (1));
-            gearDeleteBtn.setBounds      (gRow2.removeFromRight (64).reduced (1));
-        }
-
         editArea.removeFromTop (6);
         editViewport.setBounds (editArea);
         layoutEditContent (editArea.getWidth());
 
         if (layoutEditMode)
         {
-            customizeOverlay.setBounds (editArea);
+            auto barArea = workArea.removeFromTop (58);
+            auto gRow1 = barArea.removeFromTop (27);
+            int colW1 = 104, colW2 = 126;
+            gearGridBox.setBounds        (gRow1.removeFromLeft (colW1).reduced (2, 1));
+            gearFaderStyleBox.setBounds  (gRow1.removeFromLeft (colW1).reduced (2, 1));
+            gearFaderColBox.setBounds  (gRow1.removeFromLeft (colW2).reduced (2, 1));
+            gearKnobStyleBox.setBounds   (gRow1.removeFromLeft (colW1).reduced (2, 1));
+            gearKnobColBox.setBounds   (gRow1.removeFromLeft (colW2).reduced (2, 1));
+
+            barArea.removeFromTop (2);
+            auto gRow2 = barArea.removeFromTop (27);
+            gearSwitchStyleBox.setBounds (gRow2.removeFromLeft (colW1).reduced (2, 1));
+            gearSwitchColBox.setBounds (gRow2.removeFromLeft (colW2).reduced (2, 1));
+            gearDoneBtn.setBounds        (gRow2.removeFromRight (66).reduced (2, 1));
+            gearResetBtn.setBounds       (gRow2.removeFromRight (62).reduced (2, 1));
+            gearDeleteBtn.setBounds      (gRow2.removeFromRight (66).reduced (2, 1));
+
+            customizeOverlay.setBounds (workArea);
             customizeOverlay.toFront (false);
             gearGridBox.toFront (false);
             gearFaderStyleBox.toFront (false);
@@ -3361,9 +3478,19 @@ RythmeAudioProcessorEditor::RythmeAudioProcessorEditor (RythmeAudioProcessor& p)
 {
     setWantsKeyboardFocus (true);
     setResizable (true, false);
+    setResizeLimits (static_cast<int> (std::round (baseWidth * 0.50f)),
+                     static_cast<int> (std::round (baseHeight * 0.50f)),
+                     static_cast<int> (std::round (baseWidth * 1.50f)) + 8,
+                     static_cast<int> (std::round (baseHeight * 1.50f)) + 8);
+    if (auto* c = getConstrainer())
+        c->setFixedAspectRatio (static_cast<double> (baseWidth) / static_cast<double> (baseHeight));
+
+    currentScale = juce::jlimit (0.5f, 1.5f, audioProcessor.uiScale);
     addAndMakeVisible (mainView);
     mainView.setBounds (0, 0, baseWidth, baseHeight);
-    setSize (baseWidth, baseHeight);
+    mainView.setTransform (juce::AffineTransform::scale (currentScale));
+    setSize (static_cast<int> (std::round (baseWidth * currentScale)),
+             static_cast<int> (std::round (baseHeight * currentScale)));
     startTimerHz (24);
 }
 
@@ -3380,12 +3507,16 @@ bool RythmeAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
 void RythmeAudioProcessorEditor::applyUiScale (float newScale)
 {
     currentScale = juce::jlimit (0.5f, 1.5f, newScale);
+    audioProcessor.uiScale = currentScale;
+    audioProcessor.saveUiLayoutToDisk();
+
     int targetW = static_cast<int> (std::round (baseWidth * currentScale));
     int targetH = static_cast<int> (std::round (baseHeight * currentScale));
-    setResizeLimits (targetW, targetH, targetW, targetH);
-    setSize (targetW, targetH);
+
     mainView.setBounds (0, 0, baseWidth, baseHeight);
     mainView.setTransform (juce::AffineTransform::scale (currentScale));
+    if (getWidth() != targetW || getHeight() != targetH)
+        setSize (targetW, targetH);
     repaint();
 }
 
@@ -3393,6 +3524,14 @@ void RythmeAudioProcessorEditor::paint (juce::Graphics& g) { g.fillAll (juce::Co
 
 void RythmeAudioProcessorEditor::resized()
 {
+    if (getWidth() > 0 && getHeight() > 0)
+    {
+        float sx = getWidth() / static_cast<float> (baseWidth);
+        float sy = getHeight() / static_cast<float> (baseHeight);
+        float s = juce::jlimit (0.5f, 1.5f, std::min (sx, sy));
+        currentScale = s;
+        audioProcessor.uiScale = s;
+    }
     mainView.setBounds (0, 0, baseWidth, baseHeight);
     mainView.setTransform (juce::AffineTransform::scale (currentScale));
 }

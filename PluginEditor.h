@@ -182,16 +182,19 @@ private:
     void updateWheelFromY (int y);
 };
 
-// Preset Dropdown (v) + Editable Library Name Box (default "KINETIK") + Save Icon Button
+// Preset Dropdown (v) + Editable Dashed Name Box + Save Icon Button
 class PresetBarWidget : public juce::Component
 {
 public:
     PresetBarWidget (RythmeAudioProcessor& p,
                      std::function<void()> onSaveClicked,
                      std::function<void(const juce::File&)> onLoadFile,
-                     std::function<void()> onSetRootFolder);
+                     std::function<void()> onSetRootFolder,
+                     std::function<void()> onBrowseLoadPreset);
 
     void refreshTextFromProcessor();
+    juce::String getCurrentTypedText() const { return libNameEditor.getText().trim(); }
+    void flashSavedFeedback (bool success);
     void resized() override;
     void paint (juce::Graphics& g) override;
 
@@ -200,6 +203,7 @@ private:
     std::function<void()> saveCb;
     std::function<void(const juce::File&)> loadFileCb;
     std::function<void()> setRootCb;
+    std::function<void()> browseLoadCb;
 
     juce::TextButton dropdownBtn { "v" };
     juce::TextEditor libNameEditor;
@@ -349,7 +353,8 @@ public:
         juce::Component* comp = nullptr;
     };
 
-    LayoutCustomizeOverlay (std::function<void(const juce::String&)> onDeleteKey);
+    LayoutCustomizeOverlay (std::function<void(const juce::String&)> onDeleteKey,
+                            std::function<void()> onBoundsChangedCb = nullptr);
     void setTargets (std::vector<TargetEntry> items);
     void setGridStep (int px) { gridStepPx = px; repaint(); }
     void deleteSelectedOrMarked();
@@ -370,6 +375,7 @@ private:
     juce::Rectangle<int> startLocalBounds;
     std::set<juce::String> pendingDeleteKeys;
     std::function<void(const juce::String&)> onDeleteCallback;
+    std::function<void()> onBoundsChangedCallback;
 
     int snap (int v) const;
 };
@@ -380,6 +386,7 @@ public:
     enum class ActiveTab { Main = 0, Edit };
 
     MainPluginView (RythmeAudioProcessor& p, std::function<void(float)> onScaleSelected);
+    ~MainPluginView() override;
     void paint (juce::Graphics& g) override;
     void resized() override;
 
@@ -396,10 +403,7 @@ private:
     ActiveTab activeTab = ActiveTab::Main;
     bool layoutEditMode = false;
 
-    std::map<juce::String, juce::Rectangle<int>> mainCustomBounds;
-    std::map<juce::String, juce::Rectangle<int>> editCustomBounds;
-    std::set<juce::String> mainHiddenKeys;
-    std::set<juce::String> editHiddenKeys;
+    // Custom bounds & hidden keys are stored persistently on audioProcessor
 
     LeftKinetikScaleButton leftScaleBtn;
     PresetBarWidget presetBar;
@@ -508,6 +512,7 @@ private:
     void syncGroupControls();
     void syncFxControls();
     void savePresetAction();
+    void browseLoadPresetAction();
     void chooseRootLibraryFolder();
 };
 

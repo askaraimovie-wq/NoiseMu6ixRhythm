@@ -191,6 +191,7 @@ RythmeAudioProcessor::RythmeAudioProcessor()
     groups.emplace_back();
     selectedGroupIndex = 0;
     loadLibraryRegistry();
+    loadUiLayoutFromDisk();
 }
 
 RythmeAudioProcessor::~RythmeAudioProcessor() = default;
@@ -214,6 +215,149 @@ juce::File RythmeAudioProcessor::getRegistryFile() const
                        .getChildFile ("KINETIK");
     appData.createDirectory();
     return appData.getChildFile ("library_registry.xml");
+}
+
+juce::File RythmeAudioProcessor::getUiLayoutFile() const
+{
+    auto appData = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                       .getChildFile ("NoiseMu6ixStudio")
+                       .getChildFile ("KINETIK");
+    appData.createDirectory();
+    return appData.getChildFile ("ui_layout.xml");
+}
+
+void RythmeAudioProcessor::saveUiLayoutToDisk()
+{
+    juce::XmlElement root ("KINETIK_UI_LAYOUT");
+    root.setAttribute ("uiScale", static_cast<double> (uiScale));
+    root.setAttribute ("customizeGridStep", customizeGridStep);
+    root.setAttribute ("logoStyleId", logoStyleId);
+    root.setAttribute ("logoColourIdx", logoColourIdx);
+    root.setAttribute ("knobStyleId", knobStyleId);
+    root.setAttribute ("knobColourIdx", knobColourIdx);
+    root.setAttribute ("faderStyleId", faderStyleId);
+    root.setAttribute ("faderColourIdx", faderColourIdx);
+    root.setAttribute ("switchStyleId", switchStyleId);
+    root.setAttribute ("switchColourIdx", switchColourIdx);
+
+    auto* mb = root.createNewChildElement ("MAIN_BOUNDS");
+    for (const auto& kv : mainCustomBounds)
+    {
+        auto* e = mb->createNewChildElement ("B");
+        e->setAttribute ("k", kv.first);
+        e->setAttribute ("x", kv.second.getX());
+        e->setAttribute ("y", kv.second.getY());
+        e->setAttribute ("w", kv.second.getWidth());
+        e->setAttribute ("h", kv.second.getHeight());
+    }
+
+    auto* eb = root.createNewChildElement ("EDIT_BOUNDS");
+    for (const auto& kv : editCustomBounds)
+    {
+        auto* e = eb->createNewChildElement ("B");
+        e->setAttribute ("k", kv.first);
+        e->setAttribute ("x", kv.second.getX());
+        e->setAttribute ("y", kv.second.getY());
+        e->setAttribute ("w", kv.second.getWidth());
+        e->setAttribute ("h", kv.second.getHeight());
+    }
+
+    auto* mh = root.createNewChildElement ("MAIN_HIDDEN");
+    for (const auto& k : mainHiddenKeys)
+    {
+        auto* e = mh->createNewChildElement ("H");
+        e->setAttribute ("k", k);
+    }
+
+    auto* eh = root.createNewChildElement ("EDIT_HIDDEN");
+    for (const auto& k : editHiddenKeys)
+    {
+        auto* e = eh->createNewChildElement ("H");
+        e->setAttribute ("k", k);
+    }
+
+    root.writeTo (getUiLayoutFile());
+}
+
+void RythmeAudioProcessor::loadUiLayoutFromDisk()
+{
+    auto f = getUiLayoutFile();
+    if (! f.existsAsFile()) return;
+    auto xml = juce::XmlDocument::parse (f);
+    if (xml == nullptr || ! xml->hasTagName ("KINETIK_UI_LAYOUT")) return;
+
+    uiScale           = juce::jlimit (0.5f, 1.5f, static_cast<float> (xml->getDoubleAttribute ("uiScale", 1.0)));
+    customizeGridStep = juce::jlimit (0, 50, xml->getIntAttribute ("customizeGridStep", 20));
+    logoStyleId       = juce::jlimit (1, 4, xml->getIntAttribute ("logoStyleId", 1));
+    logoColourIdx     = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("logoColourIdx", 11));
+    knobStyleId       = juce::jlimit (1, 10, xml->getIntAttribute ("knobStyleId", 1));
+    knobColourIdx     = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("knobColourIdx", 11));
+    faderStyleId      = juce::jlimit (1, 10, xml->getIntAttribute ("faderStyleId", 1));
+    faderColourIdx    = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("faderColourIdx", 11));
+    switchStyleId     = juce::jlimit (1, 10, xml->getIntAttribute ("switchStyleId", 1));
+    switchColourIdx   = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("switchColourIdx", 11));
+
+    mainCustomBounds.clear();
+    if (auto* mb = xml->getChildByName ("MAIN_BOUNDS"))
+    {
+        for (auto* e : mb->getChildIterator())
+        {
+            if (e->hasTagName ("B"))
+            {
+                auto key = e->getStringAttribute ("k");
+                int x = e->getIntAttribute ("x", 0);
+                int y = e->getIntAttribute ("y", 0);
+                int w = e->getIntAttribute ("w", 40);
+                int h = e->getIntAttribute ("h", 24);
+                if (key.isNotEmpty() && w >= 16 && h >= 12)
+                    mainCustomBounds[key] = juce::Rectangle<int> (x, y, w, h);
+            }
+        }
+    }
+
+    editCustomBounds.clear();
+    if (auto* eb = xml->getChildByName ("EDIT_BOUNDS"))
+    {
+        for (auto* e : eb->getChildIterator())
+        {
+            if (e->hasTagName ("B"))
+            {
+                auto key = e->getStringAttribute ("k");
+                int x = e->getIntAttribute ("x", 0);
+                int y = e->getIntAttribute ("y", 0);
+                int w = e->getIntAttribute ("w", 40);
+                int h = e->getIntAttribute ("h", 24);
+                if (key.isNotEmpty() && w >= 16 && h >= 12)
+                    editCustomBounds[key] = juce::Rectangle<int> (x, y, w, h);
+            }
+        }
+    }
+
+    mainHiddenKeys.clear();
+    if (auto* mh = xml->getChildByName ("MAIN_HIDDEN"))
+        for (auto* e : mh->getChildIterator())
+            if (e->hasTagName ("H") && e->getStringAttribute ("k").isNotEmpty())
+                mainHiddenKeys.insert (e->getStringAttribute ("k"));
+
+    editHiddenKeys.clear();
+    if (auto* eh = xml->getChildByName ("EDIT_HIDDEN"))
+        for (auto* e : eh->getChildIterator())
+            if (e->hasTagName ("H") && e->getStringAttribute ("k").isNotEmpty())
+                editHiddenKeys.insert (e->getStringAttribute ("k"));
+}
+
+void RythmeAudioProcessor::refreshLibraryFolderIfMatches (const juce::File& file)
+{
+    const juce::ScopedLock sl (zoneLock);
+    if (rootLibraryFolder.isDirectory())
+    {
+        scanFolderIntoCategories (rootLibraryFolder);
+        saveLibraryRegistry();
+    }
+    else if (file.getParentDirectory().isDirectory())
+    {
+        addLibraryFolderPersistent (file.getParentDirectory());
+    }
 }
 
 void RythmeAudioProcessor::scanFolderIntoCategories (const juce::File& folder)
@@ -1239,14 +1383,17 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     }
 }
 
-bool RythmeAudioProcessor::savePresetMn6x (const juce::File& file)
+std::unique_ptr<juce::XmlElement> RythmeAudioProcessor::createFullStateXml (bool includeUiLayout) const
 {
-    auto state = apvts.copyState();
-    std::unique_ptr<juce::XmlElement> xml (state.createXml());
+    auto xml = std::make_unique<juce::XmlElement> ("KINETIK_PRESET");
+    xml->setAttribute ("formatVersion", 2);
     xml->setAttribute ("presetName", currentPresetName);
     xml->setAttribute ("libraryName", libraryNameText);
     xml->setAttribute ("brandLetters", brandLetters);
     xml->setAttribute ("pluginTitleText", pluginTitleText);
+    xml->setAttribute ("masterGainDb", static_cast<double> (masterGainDb.load()));
+    xml->setAttribute ("fxBypass", fxBypass.load() ? 1 : 0);
+    xml->setAttribute ("selectGroupOnly", selectGroupOnly.load() ? 1 : 0);
     xml->setAttribute ("logoStyleId", logoStyleId);
     xml->setAttribute ("logoColourIdx", logoColourIdx);
     xml->setAttribute ("knobStyleId", knobStyleId);
@@ -1255,6 +1402,13 @@ bool RythmeAudioProcessor::savePresetMn6x (const juce::File& file)
     xml->setAttribute ("faderColourIdx", faderColourIdx);
     xml->setAttribute ("switchStyleId", switchStyleId);
     xml->setAttribute ("switchColourIdx", switchColourIdx);
+
+    auto state = apvts.copyState();
+    if (auto apvtsXml = state.createXml())
+    {
+        auto* apvtsWrap = xml->createNewChildElement ("APVTS");
+        apvtsWrap->addChildElement (apvtsXml.release());
+    }
 
     const juce::ScopedLock sl (zoneLock);
     auto* groupsXml = xml->createNewChildElement ("GROUPS");
@@ -1292,6 +1446,7 @@ bool RythmeAudioProcessor::savePresetMn6x (const juce::File& file)
         zx->setAttribute ("highVel", z.highVel);
         zx->setAttribute ("colIdx", z.colourIndex);
         zx->setAttribute ("realRR", z.realRREnabled ? 1 : 0);
+        zx->setAttribute ("selLayer", z.selectedLayerIndex);
 
         zx->setAttribute ("start", z.startNorm);
         zx->setAttribute ("end", z.endNorm);
@@ -1329,36 +1484,140 @@ bool RythmeAudioProcessor::savePresetMn6x (const juce::File& file)
         }
     }
 
-    currentPresetFile = file;
-    return xml->writeTo (file);
+    if (includeUiLayout)
+    {
+        auto* lay = xml->createNewChildElement ("UI_LAYOUT");
+        lay->setAttribute ("uiScale", static_cast<double> (uiScale));
+        lay->setAttribute ("customizeGridStep", customizeGridStep);
+
+        auto* mb = lay->createNewChildElement ("MAIN_BOUNDS");
+        for (const auto& kv : mainCustomBounds)
+        {
+            auto* e = mb->createNewChildElement ("B");
+            e->setAttribute ("k", kv.first);
+            e->setAttribute ("x", kv.second.getX());
+            e->setAttribute ("y", kv.second.getY());
+            e->setAttribute ("w", kv.second.getWidth());
+            e->setAttribute ("h", kv.second.getHeight());
+        }
+        auto* eb = lay->createNewChildElement ("EDIT_BOUNDS");
+        for (const auto& kv : editCustomBounds)
+        {
+            auto* e = eb->createNewChildElement ("B");
+            e->setAttribute ("k", kv.first);
+            e->setAttribute ("x", kv.second.getX());
+            e->setAttribute ("y", kv.second.getY());
+            e->setAttribute ("w", kv.second.getWidth());
+            e->setAttribute ("h", kv.second.getHeight());
+        }
+        auto* mh = lay->createNewChildElement ("MAIN_HIDDEN");
+        for (const auto& k : mainHiddenKeys)
+            mh->createNewChildElement ("H")->setAttribute ("k", k);
+        auto* eh = lay->createNewChildElement ("EDIT_HIDDEN");
+        for (const auto& k : editHiddenKeys)
+            eh->createNewChildElement ("H")->setAttribute ("k", k);
+    }
+
+    return xml;
 }
 
-bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
+bool RythmeAudioProcessor::restoreFullStateFromXml (const juce::XmlElement& xml, bool restoreUiLayout)
 {
-    auto xml = juce::XmlDocument::parse (file);
-    if (xml == nullptr) return false;
+    // 1. Restore APVTS cleanly (supports both v2 <KINETIK_PRESET>/<APVTS> and legacy <PARAMETERS>)
+    if (auto* apvtsWrap = xml.getChildByName ("APVTS"))
+    {
+        if (auto* pXml = apvtsWrap->getFirstChildElement())
+        {
+            auto vt = juce::ValueTree::fromXml (*pXml);
+            if (vt.isValid() && vt.hasType (apvts.state.getType()))
+                apvts.replaceState (vt);
+        }
+    }
+    else if (xml.hasTagName (apvts.state.getType()))
+    {
+        juce::XmlElement cleanParams (xml);
+        if (auto* g = cleanParams.getChildByName ("GROUPS")) cleanParams.removeChildElement (g, true);
+        if (auto* z = cleanParams.getChildByName ("ZONES"))  cleanParams.removeChildElement (z, true);
+        auto vt = juce::ValueTree::fromXml (cleanParams);
+        if (vt.isValid())
+            apvts.replaceState (vt);
+    }
 
-    apvts.replaceState (juce::ValueTree::fromXml (*xml));
-    currentPresetName = xml->getStringAttribute ("presetName", file.getFileNameWithoutExtension());
-    libraryNameText = xml->getStringAttribute ("libraryName", "");
-    brandLetters = xml->getStringAttribute ("brandLetters", "N6");
-    pluginTitleText = xml->getStringAttribute ("pluginTitleText", "KINETIK");
-    logoStyleId = juce::jlimit (1, 4, xml->getIntAttribute ("logoStyleId", 1));
-    logoColourIdx = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("logoColourIdx", 11));
-    knobStyleId = juce::jlimit (1, 10, xml->getIntAttribute ("knobStyleId", 1));
-    knobColourIdx = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("knobColourIdx", 11));
-    faderStyleId = juce::jlimit (1, 10, xml->getIntAttribute ("faderStyleId", 1));
-    faderColourIdx = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("faderColourIdx", 11));
-    switchStyleId = juce::jlimit (1, 10, xml->getIntAttribute ("switchStyleId", 1));
-    switchColourIdx = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("switchColourIdx", 11));
-    currentPresetFile = file;
+    currentPresetName = xml.getStringAttribute ("presetName", currentPresetName);
+    libraryNameText   = xml.getStringAttribute ("libraryName", libraryNameText);
+    brandLetters      = xml.getStringAttribute ("brandLetters", "N6");
+    pluginTitleText   = xml.getStringAttribute ("pluginTitleText", "KINETIK");
+    masterGainDb.store (juce::jlimit (-24.0f, 12.0f, static_cast<float> (xml.getDoubleAttribute ("masterGainDb", 0.0))));
+    fxBypass.store (xml.getIntAttribute ("fxBypass", 0) != 0);
+    selectGroupOnly.store (xml.getIntAttribute ("selectGroupOnly", 1) != 0);
 
-    if (auto* groupsXml = xml->getChildByName ("GROUPS"))
+    if (restoreUiLayout)
+    {
+        logoStyleId     = juce::jlimit (1, 4, xml.getIntAttribute ("logoStyleId", logoStyleId));
+        logoColourIdx   = juce::jlimit (0, numPaletteColours - 1, xml.getIntAttribute ("logoColourIdx", logoColourIdx));
+        knobStyleId     = juce::jlimit (1, 10, xml.getIntAttribute ("knobStyleId", knobStyleId));
+        knobColourIdx   = juce::jlimit (0, numPaletteColours - 1, xml.getIntAttribute ("knobColourIdx", knobColourIdx));
+        faderStyleId    = juce::jlimit (1, 10, xml.getIntAttribute ("faderStyleId", faderStyleId));
+        faderColourIdx  = juce::jlimit (0, numPaletteColours - 1, xml.getIntAttribute ("faderColourIdx", faderColourIdx));
+        switchStyleId   = juce::jlimit (1, 10, xml.getIntAttribute ("switchStyleId", switchStyleId));
+        switchColourIdx = juce::jlimit (0, numPaletteColours - 1, xml.getIntAttribute ("switchColourIdx", switchColourIdx));
+
+        if (auto* lay = xml.getChildByName ("UI_LAYOUT"))
+        {
+            uiScale           = juce::jlimit (0.5f, 1.5f, static_cast<float> (lay->getDoubleAttribute ("uiScale", uiScale)));
+            customizeGridStep = juce::jlimit (0, 50, lay->getIntAttribute ("customizeGridStep", customizeGridStep));
+            if (auto* mb = lay->getChildByName ("MAIN_BOUNDS"))
+            {
+                mainCustomBounds.clear();
+                for (auto* e : mb->getChildIterator())
+                    if (e->hasTagName ("B") && e->getStringAttribute ("k").isNotEmpty())
+                        mainCustomBounds[e->getStringAttribute ("k")] = {
+                            e->getIntAttribute ("x"), e->getIntAttribute ("y"),
+                            std::max (16, e->getIntAttribute ("w", 40)), std::max (12, e->getIntAttribute ("h", 24))
+                        };
+            }
+            if (auto* eb = lay->getChildByName ("EDIT_BOUNDS"))
+            {
+                editCustomBounds.clear();
+                for (auto* e : eb->getChildIterator())
+                    if (e->hasTagName ("B") && e->getStringAttribute ("k").isNotEmpty())
+                        editCustomBounds[e->getStringAttribute ("k")] = {
+                            e->getIntAttribute ("x"), e->getIntAttribute ("y"),
+                            std::max (16, e->getIntAttribute ("w", 40)), std::max (12, e->getIntAttribute ("h", 24))
+                        };
+            }
+            if (auto* mh = lay->getChildByName ("MAIN_HIDDEN"))
+            {
+                mainHiddenKeys.clear();
+                for (auto* e : mh->getChildIterator())
+                    if (e->hasTagName ("H") && e->getStringAttribute ("k").isNotEmpty())
+                        mainHiddenKeys.insert (e->getStringAttribute ("k"));
+            }
+            if (auto* eh = lay->getChildByName ("EDIT_HIDDEN"))
+            {
+                editHiddenKeys.clear();
+                for (auto* e : eh->getChildIterator())
+                    if (e->hasTagName ("H") && e->getStringAttribute ("k").isNotEmpty())
+                        editHiddenKeys.insert (e->getStringAttribute ("k"));
+            }
+        }
+    }
+
+    // 2. Stop all voices safely before modifying groups/zones
+    {
+        const juce::ScopedLock sl (zoneLock);
+        for (auto& v : voices)
+            v.active = false;
+    }
+
+    // 3. Restore Groups
+    if (auto* groupsXml = xml.getChildByName ("GROUPS"))
     {
         const juce::ScopedLock sl (zoneLock);
         groups.clear();
         for (auto* gx : groupsXml->getChildIterator())
         {
+            if (! gx->hasTagName ("GROUP")) continue;
             SampleGroup g;
             g.name = gx->getStringAttribute ("name", "Group");
             g.muted = gx->getIntAttribute ("muted", 0) != 0;
@@ -1388,26 +1647,30 @@ bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
         selectedGroupIndex = 0;
     }
 
-    if (auto* zonesXml = xml->getChildByName ("ZONES"))
+    // 4. Restore Zones + Layers + Sequencer Events
+    if (auto* zonesXml = xml.getChildByName ("ZONES"))
     {
         {
             const juce::ScopedLock sl (zoneLock);
             zones.clear();
+            selectedZoneIndex = -1;
         }
         for (auto* zx : zonesXml->getChildIterator())
         {
+            if (! zx->hasTagName ("ZONE")) continue;
             int idx = createEmptyZone (zx->getIntAttribute ("rootKey", 60));
+            int wantedLayerIdx = zx->getIntAttribute ("selLayer", 0);
             {
                 const juce::ScopedLock sl (zoneLock);
                 auto& z = zones[static_cast<size_t> (idx)];
                 z.name = zx->getStringAttribute ("name", z.name);
                 z.groupIndex = juce::jlimit (0, std::max (0, static_cast<int> (groups.size()) - 1), zx->getIntAttribute ("groupIdx", 0));
-                z.lowKey = zx->getIntAttribute ("lowKey", 60);
-                z.highKey = zx->getIntAttribute ("highKey", 60);
-                z.rootKey = zx->getIntAttribute ("rootKey", 60);
-                z.lowVel = zx->getIntAttribute ("lowVel", 0);
-                z.highVel = zx->getIntAttribute ("highVel", 127);
-                z.colourIndex = zx->getIntAttribute ("colIdx", 11);
+                z.lowKey = juce::jlimit (0, 120, zx->getIntAttribute ("lowKey", 60));
+                z.highKey = juce::jlimit (z.lowKey, 120, zx->getIntAttribute ("highKey", 60));
+                z.rootKey = juce::jlimit (0, 120, zx->getIntAttribute ("rootKey", 60));
+                z.lowVel = juce::jlimit (0, 127, zx->getIntAttribute ("lowVel", 0));
+                z.highVel = juce::jlimit (z.lowVel, 127, zx->getIntAttribute ("highVel", 127));
+                z.colourIndex = juce::jlimit (0, numPaletteColours - 1, zx->getIntAttribute ("colIdx", 11));
                 z.colour = getPaletteColour (z.colourIndex);
                 z.realRREnabled = zx->getIntAttribute ("realRR", 1) != 0;
 
@@ -1439,6 +1702,12 @@ bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
                     if (f.existsAsFile()) addSampleToZone (idx, f);
                 }
             }
+            {
+                const juce::ScopedLock sl (zoneLock);
+                auto& z = zones[static_cast<size_t> (idx)];
+                if (! z.layers.empty())
+                    z.selectedLayerIndex = juce::jlimit (0, static_cast<int> (z.layers.size()) - 1, wantedLayerIdx);
+            }
             if (auto* seqXml = zx->getChildByName ("SEQ_EVENTS"))
             {
                 const juce::ScopedLock sl (zoneLock);
@@ -1453,22 +1722,54 @@ bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
                 }
             }
         }
+
+        const juce::ScopedLock sl (zoneLock);
+        selectedZoneIndex = zones.empty() ? -1 : 0;
     }
+
     return true;
+}
+
+bool RythmeAudioProcessor::savePresetMn6x (const juce::File& file)
+{
+    if (file == juce::File()) return false;
+    file.getParentDirectory().createDirectory();
+    auto xml = createFullStateXml (false);
+    if (xml == nullptr) return false;
+
+    if (! xml->writeTo (file))
+        return false;
+
+    currentPresetFile = file;
+    refreshLibraryFolderIfMatches (file);
+    return true;
+}
+
+bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
+{
+    if (! file.existsAsFile()) return false;
+    auto xml = juce::XmlDocument::parse (file);
+    if (xml == nullptr) return false;
+
+    currentPresetFile = file;
+    bool ok = restoreFullStateFromXml (*xml, false);
+    if (libraryNameText.trim().isEmpty())
+        libraryNameText = file.getFileNameWithoutExtension();
+    currentPresetName = libraryNameText;
+    return ok;
 }
 
 void RythmeAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    auto state = apvts.copyState();
-    std::unique_ptr<juce::XmlElement> xml (state.createXml());
-    copyXmlToBinary (*xml, destData);
+    if (auto xml = createFullStateXml (true))
+        copyXmlToBinary (*xml, destData);
 }
 
 void RythmeAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
-    if (xmlState != nullptr && xmlState->hasTagName (apvts.state.getType()))
-        apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
+    auto xmlState = getXmlFromBinary (data, sizeInBytes);
+    if (xmlState != nullptr)
+        restoreFullStateFromXml (*xmlState, true);
 }
 
 juce::AudioProcessorEditor* RythmeAudioProcessor::createEditor()
