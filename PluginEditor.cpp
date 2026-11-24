@@ -1639,12 +1639,12 @@ void FabStyleFxDisplay::paint (juce::Graphics& g)
     {
         juce::Path curve;
         float drive = 1.0f + slotCopy.p1 * 6.0f;
-        float invNorm = 1.0f / fastTanh (drive);
+        float invNorm = 1.0f / std::tanh (drive);
         for (int i = 0; i <= 64; ++i)
         {
             float t = i / 64.0f;
             float x = (t * 2.0f - 1.0f) * drive;
-            float y = fastTanh (x) * invNorm;
+            float y = std::tanh (x) * invNorm;
             float px = r.getX() + t * r.getWidth();
             float py = r.getCentreY() - y * (r.getHeight() * 0.42f);
             if (i == 0) curve.startNewSubPath (px, py); else curve.lineTo (px, py);
