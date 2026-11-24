@@ -990,8 +990,7 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     }
     if (hasAnyHeldNote())
         midiInActivity = std::max (midiInActivity, 0.75f);
-    float prevIn = inputMeterLevel.load();
-    inputMeterLevel.store (std::max (midiInActivity, prevIn * 0.86f));
+    (void) midiInActivity;
 
     bool transportAllPlay = seqLoopOn && (internalPlaying.load() || (hostSyncOn && dawPlaying));
     bool anyMidiHeld = seqLoopOn && hasAnyHeldNote();
@@ -1206,15 +1205,17 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     }
 
     float mGain = juce::Decibels::decibelsToGain (masterGainDb.load(), -36.0f);
-    float blockPeak = 0.0f;
+    float peakL = 0.0f, peakR = 0.0f;
     for (int i = 0; i < numSamples; ++i)
     {
         outL[i] *= mGain;
         outR[i] *= mGain;
-        blockPeak = std::max (blockPeak, std::max (std::abs (outL[i]), std::abs (outR[i])));
+        peakL = std::max (peakL, std::abs (outL[i]));
+        peakR = std::max (peakR, std::abs (outR[i]));
     }
-    float prevOut = outputMeterLevel.load();
-    outputMeterLevel.store (std::max (juce::jlimit (0.0f, 1.0f, blockPeak), prevOut * 0.86f));
+    float blockPeak = std::max (peakL, peakR);
+    outputMeterL.store (std::max (juce::jlimit (0.0f, 1.0f, peakL), outputMeterL.load() * 0.86f));
+    outputMeterR.store (std::max (juce::jlimit (0.0f, 1.0f, peakR), outputMeterR.load() * 0.86f));
 
     {
         const juce::SpinLock::ScopedLockType ssl (scopeLock);

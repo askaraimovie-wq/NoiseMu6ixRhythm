@@ -10,7 +10,7 @@
 #include <string>
 
 #ifndef KINETIK_AUTO_VERSION_STR
-#define KINETIK_AUTO_VERSION_STR "v1.3.0"
+#define KINETIK_AUTO_VERSION_STR "v1.3.1"
 #endif
 
 struct FastSVF
@@ -295,8 +295,8 @@ public:
     std::atomic<float> pitchWheelNorm { 0.0f };     // -1.0 to +1.0
     std::atomic<float> modWheelNorm { 0.0f };       // 0.0 to 1.0
     std::atomic<float> masterGainDb { 0.0f };       // -24.0 to +12.0 dB (0.0 center)
-    std::atomic<float> inputMeterLevel { 0.0f };    // 0.0 to 1.0
-    std::atomic<float> outputMeterLevel { 0.0f };   // 0.0 to 1.0
+    std::atomic<float> outputMeterL { 0.0f };       // 0.0 to 1.0 (Left output)
+    std::atomic<float> outputMeterR { 0.0f };       // 0.0 to 1.0 (Right output)
 
     juce::String currentPresetName { "" };
     juce::File currentPresetFile;

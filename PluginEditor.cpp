@@ -595,8 +595,8 @@ PresetBarWidget::PresetBarWidget (RythmeAudioProcessor& p,
 
     libNameEditor.setMultiLine (false);
     libNameEditor.setJustification (juce::Justification::centred);
-    libNameEditor.setTextToShowWhenEmpty ("- - - - - - -", juce::Colour (0xff9aa4b5));
-    libNameEditor.setText (processor.libraryNameText, juce::dontSendNotification);
+    libNameEditor.setTextToShowWhenEmpty ("KINETIK", juce::Colour (0xfff2f4f8));
+    libNameEditor.setText (processor.libraryNameText.isEmpty() ? "KINETIK" : processor.libraryNameText, juce::dontSendNotification);
     libNameEditor.setFont (juce::FontOptions (12.0f, juce::Font::bold));
     libNameEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff07080a));
     libNameEditor.setColour (juce::TextEditor::textColourId, juce::Colour (0xfff2f4f8));
@@ -618,7 +618,7 @@ PresetBarWidget::PresetBarWidget (RythmeAudioProcessor& p,
 
 void PresetBarWidget::refreshTextFromProcessor()
 {
-    libNameEditor.setText (processor.libraryNameText, juce::dontSendNotification);
+    libNameEditor.setText (processor.libraryNameText.isEmpty() ? "KINETIK" : processor.libraryNameText, juce::dontSendNotification);
 }
 
 // ---------------- UnifiedGridBox ----------------
@@ -666,29 +666,24 @@ void TopIoMeterAndMasterKnob::paint (juce::Graphics& g)
 
     auto knobR = getKnobBounds();
     auto meterArea = r.reduced (6.0f, 3.0f).withRight (knobR.getX() - 8.0f);
-    float halfW = (meterArea.getWidth() - 10.0f) * 0.5f;
+    float halfW = (meterArea.getWidth() - 8.0f) * 0.5f;
 
-    auto inBox  = meterArea.removeFromLeft (halfW);
-    meterArea.removeFromLeft (10.0f);
-    auto outBox = meterArea;
+    auto bar1Box = meterArea.removeFromLeft (halfW);
+    meterArea.removeFromLeft (8.0f);
+    auto bar2Box = meterArea;
 
-    float inLvl  = juce::jlimit (0.0f, 1.0f, processor.inputMeterLevel.load());
-    float outLvl = juce::jlimit (0.0f, 1.0f, processor.outputMeterLevel.load());
+    float lvlL = juce::jlimit (0.0f, 1.0f, processor.outputMeterL.load());
+    float lvlR = juce::jlimit (0.0f, 1.0f, processor.outputMeterR.load());
 
-    auto drawMeterStrip = [&g] (juce::Rectangle<float> box, const juce::String& tag, float lvl)
+    auto drawMeterStrip = [&g] (juce::Rectangle<float> box, float lvl)
     {
-        g.setColour (juce::Colour (0xffcfd5df));
-        g.setFont (juce::FontOptions (8.5f, juce::Font::bold));
-        auto lblR = box.removeFromLeft (22.0f);
-        g.drawText (tag, lblR, juce::Justification::centredLeft, false);
-
-        auto bar = box.reduced (1.0f, 3.0f);
+        auto bar = box.reduced (0.5f, 3.0f);
         g.setColour (juce::Colour (0xff161920));
         g.fillRoundedRectangle (bar, 2.0f);
         g.setColour (juce::Colour (0xfff2f4f8));
         g.drawRoundedRectangle (bar, 2.0f, 0.9f);
 
-        int segs = 18;
+        int segs = 22;
         float sw = (bar.getWidth() - 4.0f) / segs;
         for (int i = 0; i < segs; ++i)
         {
@@ -699,8 +694,8 @@ void TopIoMeterAndMasterKnob::paint (juce::Graphics& g)
         }
     };
 
-    drawMeterStrip (inBox, "IN", inLvl);
-    drawMeterStrip (outBox, "OUT", outLvl);
+    drawMeterStrip (bar1Box, lvlL);
+    drawMeterStrip (bar2Box, lvlR);
 
     // Master Volume Knob (0 dB center, no text label)
     float db = processor.masterGainDb.load();
@@ -3206,7 +3201,7 @@ void MainPluginView::paint (juce::Graphics& g)
 
     g.setColour (juce::Colour (0xfff2f4f8));
     g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-    g.drawText (audioProcessor.getBuildVersionString(), getWidth() - 84, getHeight() - 15, 74, 13, juce::Justification::centredRight);
+    g.drawText (audioProcessor.getBuildVersionString(), getWidth() - 84, getHeight() - 19, 74, 14, juce::Justification::centredRight);
 
     if (activeTab == ActiveTab::Edit && editViewport.isVisible())
     {
@@ -3223,22 +3218,22 @@ void MainPluginView::paint (juce::Graphics& g)
 
 void MainPluginView::resized()
 {
-    auto area = getLocalBounds().reduced (10, 8);
-    auto bottomStrip = area.removeFromBottom (58);
-    auto keyRow = bottomStrip.removeFromTop (42);
+    auto area = getLocalBounds().reduced (10, 6);
+    auto bottomStrip = area.removeFromBottom (62);
+    bottomStrip.removeFromTop (14); // Room above keyboard so version text sits cleanly above right edge
+    auto keyRow = bottomStrip.removeFromTop (44);
     pitchModWheels.setBounds (keyRow.removeFromLeft (44).reduced (0, 1));
     keyRow.removeFromLeft (4);
     bottomPiano.setBounds (keyRow.reduced (0, 1));
 
-    // Top bar: KINETIK in top-left corner, PresetBar centered, Edit + Gear icons on the right
+    // Top bar: KINETIK in top-left corner, wider PresetBar filling center space, Edit + Gear icons on the right
     auto topBar = area.removeFromTop (34);
-    leftScaleBtn.setBounds (topBar.removeFromLeft (96).reduced (1));
+    leftScaleBtn.setBounds (topBar.removeFromLeft (104).reduced (1));
     topGearBtn.setBounds   (topBar.removeFromRight (32).reduced (1));
     editModeBtn.setBounds  (topBar.removeFromRight (32).reduced (1));
-
-    int presetW = 356;
-    int centerX = (getWidth() - presetW) / 2;
-    presetBar.setBounds (juce::Rectangle<int> (centerX, topBar.getY() + 1, presetW, topBar.getHeight() - 2));
+    topBar.removeFromLeft (14);
+    topBar.removeFromRight (14);
+    presetBar.setBounds (topBar.reduced (0, 1));
 
     auto workArea = area;
 
@@ -3365,6 +3360,7 @@ RythmeAudioProcessorEditor::RythmeAudioProcessorEditor (RythmeAudioProcessor& p)
       mainView (p, [this] (float s) { applyUiScale (s); })
 {
     setWantsKeyboardFocus (true);
+    setResizable (true, false);
     addAndMakeVisible (mainView);
     mainView.setBounds (0, 0, baseWidth, baseHeight);
     setSize (baseWidth, baseHeight);
@@ -3383,10 +3379,14 @@ bool RythmeAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
 
 void RythmeAudioProcessorEditor::applyUiScale (float newScale)
 {
-    currentScale = newScale;
+    currentScale = juce::jlimit (0.5f, 1.5f, newScale);
+    int targetW = static_cast<int> (std::round (baseWidth * currentScale));
+    int targetH = static_cast<int> (std::round (baseHeight * currentScale));
+    setResizeLimits (targetW, targetH, targetW, targetH);
+    setSize (targetW, targetH);
+    mainView.setBounds (0, 0, baseWidth, baseHeight);
     mainView.setTransform (juce::AffineTransform::scale (currentScale));
-    setSize (static_cast<int> (std::round (baseWidth * currentScale)),
-             static_cast<int> (std::round (baseHeight * currentScale)));
+    repaint();
 }
 
 void RythmeAudioProcessorEditor::paint (juce::Graphics& g) { g.fillAll (juce::Colour (0xff07080a)); }
