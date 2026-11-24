@@ -12,7 +12,7 @@
 #include <set>
 
 #ifndef KINETIK_AUTO_VERSION_STR
-#define KINETIK_AUTO_VERSION_STR "v1.3.2"
+#define KINETIK_AUTO_VERSION_STR "v1.3.3"
 #endif
 
 struct FastSVF
@@ -337,7 +337,7 @@ private:
 
     juce::File getRegistryFile() const;
     juce::File getUiLayoutFile() const;
-    std::unique_ptr<juce::XmlElement> createFullStateXml (bool includeUiLayout) const;
+    std::unique_ptr<juce::XmlElement> createFullStateXml (bool includeUiLayout);
     bool restoreFullStateFromXml (const juce::XmlElement& xml, bool restoreUiLayout);
     void scanFolderIntoCategories (const juce::File& folder);
     void saveLibraryRegistry();

@@ -1700,7 +1700,7 @@ void WaveEditorComponent::paint (juce::Graphics& g)
     }
 
     juce::Path p;
-    float midY = area.getCentreY();
+    float midY = static_cast<float> (area.getCentreY());
     float halfH = area.getHeight() * 0.40f;
     p.startNewSubPath (static_cast<float> (area.getX()), midY);
     int step = std::max (1, numSamples / std::max (1, area.getWidth()));

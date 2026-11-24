@@ -1,4 +1,4 @@
 # KINETIK
 
-- **Plugin Name:** KINETIK v1.3.2
+- **Plugin Name:** KINETIK v1.3.3
 - **Company:** Noise Mu6ix Studio

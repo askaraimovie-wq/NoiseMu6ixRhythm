@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.22)
-project(KINETIK VERSION 1.3.2)
+project(KINETIK VERSION 1.3.3)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(NOT DEFINED KINETIK_VERSION_STR)
-    set(KINETIK_VERSION_STR "v1.3.2")
+    set(KINETIK_VERSION_STR "v1.3.3")
 endif()
 
 include(FetchContent)
@@ -44,7 +44,6 @@ target_compile_definitions(KINETIK
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
-        JUCE_DISPLAY_SPLASH_SCREEN=0
         KINETIK_AUTO_VERSION_STR="${KINETIK_VERSION_STR}"
 )
 

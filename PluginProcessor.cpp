@@ -1383,7 +1383,7 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     }
 }
 
-std::unique_ptr<juce::XmlElement> RythmeAudioProcessor::createFullStateXml (bool includeUiLayout) const
+std::unique_ptr<juce::XmlElement> RythmeAudioProcessor::createFullStateXml (bool includeUiLayout)
 {
     auto xml = std::make_unique<juce::XmlElement> ("KINETIK_PRESET");
     xml->setAttribute ("formatVersion", 2);
