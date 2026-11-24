@@ -10,7 +10,7 @@
 #include <string>
 
 #ifndef KINETIK_AUTO_VERSION_STR
-#define KINETIK_AUTO_VERSION_STR "v1.2.6"
+#define KINETIK_AUTO_VERSION_STR "v1.2.10"
 #endif
 
 struct FastSVF
@@ -276,15 +276,15 @@ public:
 
     juce::String brandLetters { "N6" };
     juce::String pluginTitleText { "KINETIK" };
-    juce::String libraryNameText { "Default" };
-    int logoStyleId = 1;       // 1..4
-    int logoColourIdx = 11;    // Vintage White default
-    int knobStyleId = 1;       // 1..10
-    int knobColourIdx = 11;    // Vintage White default
-    int faderStyleId = 1;      // 1..10
-    int faderColourIdx = 11;   // Vintage White default
-    int switchStyleId = 1;     // 1..10
-    int switchColourIdx = 11;  // Vintage White default
+    juce::String libraryNameText { "KINETIK" };
+    int logoStyleId = 1;
+    int logoColourIdx = 11;
+    int knobStyleId = 1;
+    int knobColourIdx = 11;
+    int faderStyleId = 1;
+    int faderColourIdx = 11;
+    int switchStyleId = 1;
+    int switchColourIdx = 11;
 
     std::atomic<bool> selectGroupOnly { true };
     std::atomic<bool> fxBypass { false };

@@ -126,11 +126,11 @@ private:
     juce::Colour activeCol { 0xfff2f4f8 };
 };
 
-// Header Title Button ("NOISE MU6IX") with 50%, 75%, 100% (Default), 120%, 150% UI scale popup
-class PermanentTitleScaleButton : public juce::Component
+// Right-side Title Scale Selector ("KINETIK") with 50%, 75%, 100% (Default), 120%, 150% popup
+class RightKinetikScaleButton : public juce::Component
 {
 public:
-    PermanentTitleScaleButton (RythmeAudioProcessor& p, std::function<void(float)> onScaleSelected);
+    RightKinetikScaleButton (RythmeAudioProcessor& p, std::function<void(float)> onScaleSelected);
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent&) override;
 
@@ -297,7 +297,6 @@ private:
     float snapToGrid (float normX) const;
 };
 
-// Layout Customize Overlay with Delete + Reset + DONE + Fader/Knob/Switch Style & Colour selectors
 class LayoutCustomizeOverlay : public juce::Component
 {
 public:
@@ -359,8 +358,8 @@ private:
     std::set<juce::String> mainHiddenKeys;
     std::set<juce::String> editHiddenKeys;
 
-    PermanentTitleScaleButton titleScaleBtn;
     PresetBarWidget presetBar;
+    RightKinetikScaleButton rightScaleBtn;
     EditModeIconButton editModeBtn;
     GearIconButton topGearBtn;
 
@@ -436,7 +435,6 @@ private:
     StyledHorizontalFader fxP4 { "P4", 0.0, 1.0, 0.5, 2 };
     StyledHorizontalFader fxP5 { "P5", 0.0, 1.0, 0.5, 2 };
 
-    // Top-Right Gear Toolbar: Grid (Default 20x), Fader Style+Col, Knob Style+Col, Switch Style+Col, Delete, Reset, DONE
     juce::ComboBox gearGridBox;
     juce::ComboBox gearFaderStyleBox;
     juce::ComboBox gearFaderColBox;

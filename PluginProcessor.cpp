@@ -168,8 +168,8 @@ juce::Colour RythmeAudioProcessor::getPaletteColour (int idx)
 juce::String RythmeAudioProcessor::getPaletteColourName (int idx)
 {
     static const char* names[numPaletteColours] = {
-        "Vintage Silver", "Light Ash", "Mid Slate", "Dark Graphite",
-        "Blue", "Pink", "Emerald", "Amber", "Purple", "Cyan", "Red", "Pure White"
+        "Silver", "Light Ash", "Mid Slate", "Dark Graphite",
+        "Blue", "Pink", "Emerald", "Amber", "Purple", "Cyan", "Red", "White"
     };
     return names[juce::jlimit (0, numPaletteColours - 1, idx)];
 }
@@ -1307,7 +1307,7 @@ bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
 
     apvts.replaceState (juce::ValueTree::fromXml (*xml));
     currentPresetName = xml->getStringAttribute ("presetName", file.getFileNameWithoutExtension());
-    libraryNameText = xml->getStringAttribute ("libraryName", "Default");
+    libraryNameText = xml->getStringAttribute ("libraryName", "KINETIK");
     brandLetters = xml->getStringAttribute ("brandLetters", "N6");
     pluginTitleText = xml->getStringAttribute ("pluginTitleText", "KINETIK");
     logoStyleId = juce::jlimit (1, 4, xml->getIntAttribute ("logoStyleId", 1));
