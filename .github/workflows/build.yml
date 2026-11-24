@@ -1,4 +1,4 @@
-name: Build RYTHME VST3
+name: Build KINETIK VST3
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version_tag:
-        description: "Optional version override (leave empty for sequential auto v1.2.3 -> v1.2.4 -> ...)"
+        description: "Optional version override"
         required: false
         default: ""
 
@@ -31,7 +31,7 @@ jobs:
           if (-not [string]::IsNullOrWhiteSpace($manual)) {
             $verStr = if ($manual.StartsWith("v")) { $manual } else { "v$manual" }
           } else {
-            $verFile = ".rythme_version"
+            $verFile = if (Test-Path ".rythme_version") { ".rythme_version" } else { ".kinetik_version" }
             if (Test-Path $verFile) {
               $raw = (Get-Content $verFile -Raw).Trim()
               if ($raw -match '^v?(\d+)\.(\d+)\.(\d+)$') {
@@ -40,34 +40,34 @@ jobs:
                 $pat = [int]$Matches[3] + 1
                 $verStr = "v$maj.$min.$pat"
               } else {
-                $verStr = "v1.2.3"
+                $verStr = "v1.2.6"
               }
             } else {
-              $verStr = "v1.2.3"
+              $verStr = "v1.2.6"
             }
             Set-Content -Path $verFile -Value $verStr -NoNewline
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add $verFile
-            git commit -m "chore: bump RYTHME version to $verStr [skip ci]"
+            git commit -m "chore: bump version to $verStr [skip ci]"
             git push
           }
           "ver_str=$verStr" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DRYTHME_VERSION_STR="${{ steps.ver.outputs.ver_str }}"
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DKINETIK_VERSION_STR="${{ steps.ver.outputs.ver_str }}"
 
       - name: Build VST3 Plugin
-        run: cmake --build build --config Release --target RYTHME_VST3 --parallel
+        run: cmake --build build --config Release --target KINETIK_VST3 --parallel
 
       - name: Verify Versioned VST3 Output
         shell: pwsh
         run: |
           $ver = "${{ steps.ver.outputs.ver_str }}"
-          $vstDir = "build/RYTHME_artefacts/Release/VST3"
+          $vstDir = "build/KINETIK_artefacts/Release/VST3"
           $src = Get-ChildItem -Path $vstDir -Filter "*.vst3" | Select-Object -First 1
           if ($null -ne $src) {
-            $targetName = "RYTHME $ver.vst3"
+            $targetName = "KINETIK $ver.vst3"
             if ($src.Name -ne $targetName) {
               $dst = Join-Path $vstDir $targetName
               if (Test-Path $dst) { Remove-Item -Recurse -Force $dst }
@@ -78,5 +78,5 @@ jobs:
       - name: Upload VST3 Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RYTHME-${{ steps.ver.outputs.ver_str }}-Windows-VST3
-          path: build/RYTHME_artefacts/Release/VST3/*.vst3
+          name: KINETIK ${{ steps.ver.outputs.ver_str }}
+          path: build/KINETIK_artefacts/Release/VST3/*.vst3
