@@ -728,37 +728,37 @@ void TopIoMeterAndMasterKnob::paint (juce::Graphics& g)
     drawMeterLine (topLeftBar, lvlL);
     drawMeterLine (botRightBar, lvlR);
 
-    // Master Volume Knob (0 dB center, no text label)
-    float db = processor.masterGainDb.load();
-    float norm = juce::jlimit (0.0f, 1.0f, (db + 24.0f) / 36.0f); // 0 dB -> 24/36 = 0.666
-    float zeroNorm = 24.0f / 36.0f;
+    // Master Volume Knob (0 dB DEAD CENTER at 12 o'clock, no text label)
+    float db = juce::jlimit (-24.0f, 12.0f, processor.masterGainDb.load());
+    float norm = (db <= 0.0f) ? (0.5f + (db / 24.0f) * 0.5f)
+                              : (0.5f + (db / 12.0f) * 0.5f);
+    norm = juce::jlimit (0.0f, 1.0f, norm);
 
     g.setColour (juce::Colour (0xff14171e));
     g.fillEllipse (knobR);
     g.setColour (juce::Colour (0xfff2f4f8));
     g.drawEllipse (knobR, 1.4f);
 
-    // Center 0-tick at top
     float startAng = -juce::MathConstants<float>::pi * 0.75f;
     float endAng   =  juce::MathConstants<float>::pi * 0.75f;
-    float zeroAng  = startAng + zeroNorm * (endAng - startAng);
-    float valAng   = startAng + norm * (endAng - startAng);
+    float valAng   = startAng + norm * (endAng - startAng); // norm=0.5 -> 0 rad (12 o'clock)
 
     float cx = knobR.getCentreX();
     float cy = knobR.getCentreY();
     float rad = knobR.getWidth() * 0.5f;
 
-    g.setColour (juce::Colour (0xff9aa4b5));
-    g.drawLine (cx + (rad + 1.0f) * std::sin (zeroAng), cy - (rad + 1.0f) * std::cos (zeroAng),
-                cx + (rad + 3.0f) * std::sin (zeroAng), cy - (rad + 3.0f) * std::cos (zeroAng), 1.3f);
+    // 12 o'clock center-zero marker tick
+    g.setColour (juce::Colour (0xffb8c0cc));
+    g.drawLine (cx, cy - rad - 1.0f, cx, cy - rad - 3.2f, 1.4f);
 
     g.setColour (juce::Colours::white);
-    g.drawLine (cx, cy, cx + (rad - 2.0f) * std::sin (valAng), cy - (rad - 2.0f) * std::cos (valAng), 1.8f);
+    g.drawLine (cx, cy, cx + (rad - 2.0f) * std::sin (valAng), cy - (rad - 2.0f) * std::cos (valAng), 1.9f);
 }
 
 void TopIoMeterAndMasterKnob::mouseDown (const juce::MouseEvent& e)
 {
-    if (getKnobBounds().expanded (4.0f).contains (e.position))
+    isDraggingKnob = getKnobBounds().expanded (5.0f).contains (e.position);
+    if (isDraggingKnob)
     {
         dragStartY = e.y;
         dragStartDb = processor.masterGainDb.load();
@@ -767,17 +767,21 @@ void TopIoMeterAndMasterKnob::mouseDown (const juce::MouseEvent& e)
 
 void TopIoMeterAndMasterKnob::mouseDrag (const juce::MouseEvent& e)
 {
+    if (! isDraggingKnob) return;
     float dy = static_cast<float> (dragStartY - e.y);
-    float nextDb = juce::jlimit (-24.0f, 12.0f, dragStartDb + dy * 0.25f);
+    float nextDb = juce::jlimit (-24.0f, 12.0f, dragStartDb + dy * 0.22f);
     if (std::abs (nextDb) < 0.45f) nextDb = 0.0f;
     processor.masterGainDb.store (nextDb);
     repaint();
 }
 
-void TopIoMeterAndMasterKnob::mouseDoubleClick (const juce::MouseEvent&)
+void TopIoMeterAndMasterKnob::mouseDoubleClick (const juce::MouseEvent& e)
 {
-    processor.masterGainDb.store (0.0f);
-    repaint();
+    if (getKnobBounds().expanded (5.0f).contains (e.position))
+    {
+        processor.masterGainDb.store (0.0f);
+        repaint();
+    }
 }
 
 // ---------------- PitchModWheelsComponent ----------------
@@ -1179,25 +1183,31 @@ void ColorPianoStrip::paint (juce::Graphics& g)
             }
         }
 
-        bool isPressed = (note == pressedNote || note == activeNote);
+        bool isHeld = (note >= 0 && note < 128 && processor.activeNotesUi[static_cast<size_t> (note)].load() != 0);
+        bool isPressed = (note == pressedNote || isHeld || note == activeNote);
         if (isPressed)
-            g.setColour (isMapped ? mappedCol.brighter (0.45f) : (isBlack ? juce::Colours::white : juce::Colour (0xff596578)));
+            g.setColour (isMapped ? mappedCol.brighter (0.55f) : (isBlack ? juce::Colours::white : juce::Colour (0xff4c9aff)));
         else if (isKs)
             g.setColour (note == activeKs ? juce::Colour (0xffee5253) : juce::Colour (0xffa8383b));
         else if (isMapped)
-            g.setColour (isBlack ? mappedCol.darker (0.38f) : mappedCol);
+            g.setColour (isBlack ? mappedCol.darker (0.35f) : mappedCol);
         else
             g.setColour (isBlack ? juce::Colour (0xff0e1015) : juce::Colour (0xfff2f4f8));
 
         g.fillRect (kr);
+        if (isMapped && ! isPressed)
+        {
+            g.setColour (mappedCol.contrasting (0.25f));
+            g.fillRect (kr.getX() + 0.5f, kr.getY(), std::max (1.0f, kr.getWidth() - 1.0f), 4.0f);
+        }
         g.setColour (juce::Colour (0xff07080a));
         g.drawRect (kr, 0.8f);
 
         if (isPressed)
         {
             g.setColour (juce::Colours::white);
-            g.drawRect (kr.reduced (0.5f), 1.5f);
-            g.fillEllipse (kr.getCentreX() - 2.2f, kr.getY() + 3.0f, 4.4f, 4.4f);
+            g.drawRect (kr.reduced (0.5f), 1.6f);
+            g.fillEllipse (kr.getCentreX() - 2.4f, kr.getY() + 4.0f, 4.8f, 4.8f);
         }
 
         if (n == 0)
@@ -1219,6 +1229,19 @@ void ColorPianoStrip::mouseDown (const juce::MouseEvent& e)
     pressedNote = note;
     processor.uiNoteOn (note, 0.9f);
     repaint();
+}
+
+void ColorPianoStrip::mouseDrag (const juce::MouseEvent& e)
+{
+    int note = startNote + static_cast<int> ((e.x / static_cast<float> (std::max (1, getWidth()))) * numKeys);
+    note = juce::jlimit (startNote, startNote + numKeys - 1, note);
+    if (note != pressedNote)
+    {
+        if (pressedNote >= 0) processor.uiNoteOff (pressedNote);
+        pressedNote = note;
+        processor.uiNoteOn (note, 0.9f);
+        repaint();
+    }
 }
 
 void ColorPianoStrip::mouseUp (const juce::MouseEvent&)
@@ -2695,6 +2718,7 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     applyAllStyles();
     setActiveTab (ActiveTab::Main);
     syncPerZoneControls();
+    lastSeenStateRevision = audioProcessor.stateRevision.load();
 }
 
 void MainPluginView::chooseRootLibraryFolder()
@@ -2867,6 +2891,8 @@ void MainPluginView::enterLayoutCustomizeMode (bool enable)
     }
 
     layoutEditMode = enable;
+    pitchModWheels.setVisible (! enable);
+    bottomPiano.setVisible (! enable);
     gearGridBox.setVisible (enable);
     gearFaderStyleBox.setVisible (enable);
     gearFaderColBox.setVisible (enable);
@@ -3196,8 +3222,42 @@ void MainPluginView::handleFilesDropped (const juce::StringArray& files, int loc
     repaintDynamicAreas();
 }
 
+void MainPluginView::syncAllUiFromProcessor()
+{
+    lastSeenStateRevision = audioProcessor.stateRevision.load();
+    presetBar.refreshTextFromProcessor();
+    bpmBox.setValue (audioProcessor.apvts.getRawParameterValue ("internalBpm")->load(), false);
+    shuffleFader.setValue (audioProcessor.apvts.getRawParameterValue ("shuffle")->load(), false);
+    timeRandFader.setValue (audioProcessor.apvts.getRawParameterValue ("timeRand")->load(), false);
+    velRandFader.setValue (audioProcessor.apvts.getRawParameterValue ("velRand")->load(), false);
+    fxBypassBtn.setToggleState (audioProcessor.fxBypass.load(), juce::dontSendNotification);
+    selGroupOnlyBtn.setToggleState (audioProcessor.selectGroupOnly.load(), juce::dontSendNotification);
+    editKeyMapper.setFilterToSelectedGroup (audioProcessor.selectGroupOnly.load());
+    editKeyMapper.selectSingleZone (audioProcessor.selectedZoneIndex);
+
+    gearFaderStyleBox.setSelectedId (audioProcessor.faderStyleId, juce::dontSendNotification);
+    gearFaderColBox.setSelectedId (audioProcessor.faderColourIdx + 1, juce::dontSendNotification);
+    gearKnobStyleBox.setSelectedId (audioProcessor.knobStyleId, juce::dontSendNotification);
+    gearKnobColBox.setSelectedId (audioProcessor.knobColourIdx + 1, juce::dontSendNotification);
+    gearSwitchStyleBox.setSelectedId (audioProcessor.switchStyleId, juce::dontSendNotification);
+    gearSwitchColBox.setSelectedId (audioProcessor.switchColourIdx + 1, juce::dontSendNotification);
+    int gridId = (audioProcessor.customizeGridStep <= 0) ? 1 : juce::jlimit (2, 6, (audioProcessor.customizeGridStep / 10) + 1);
+    gearGridBox.setSelectedId (gridId, juce::dontSendNotification);
+    customizeOverlay.setGridStep (audioProcessor.customizeGridStep);
+
+    refreshGroupBoxes();
+    syncGroupControls();
+    syncFxControls();
+    syncPerZoneControls();
+    applyAllStyles();
+    resized();
+}
+
 void MainPluginView::repaintDynamicAreas()
 {
+    if (lastSeenStateRevision != audioProcessor.stateRevision.load())
+        syncAllUiFromProcessor();
+
     if (topIoMasterBar.isVisible()) topIoMasterBar.repaint();
     if (mainWaveDisplay.isVisible()) mainWaveDisplay.repaint();
     if (seqComp.isVisible()) seqComp.repaint();
@@ -3321,7 +3381,13 @@ void MainPluginView::paint (juce::Graphics& g)
     g.fillAll (juce::Colour (0xff07080a));
     drawSketchRect (g, getLocalBounds().toFloat().reduced (3.0f), 6.0f, 1.4f, juce::Colour (0xfff2f4f8));
 
-    // Version string is displayed right next to the KINETIK title at top-left
+    if (layoutEditMode && ! gearToolbarBounds.isEmpty())
+    {
+        auto tb = gearToolbarBounds.toFloat();
+        g.setColour (juce::Colour (0xff0d1016));
+        g.fillRoundedRectangle (tb, 4.0f);
+        drawSketchRect (g, tb.reduced (0.5f), 4.0f, 1.3f, juce::Colour (0xfff2f4f8));
+    }
 
     if (activeTab == ActiveTab::Edit && editViewport.isVisible())
     {
@@ -3338,49 +3404,54 @@ void MainPluginView::paint (juce::Graphics& g)
 
 void MainPluginView::resized()
 {
-    auto area = getLocalBounds().reduced (10, 8);
-    auto keyRow = area.removeFromBottom (46);
+    auto area = getLocalBounds().reduced (10, 8); // Exact 760 x 620
+
+    // Bottom 50px slot: Piano Keyboard + Pitch/Mod Wheels normally, OR opaque 2-row Gear Customize Toolbar in Customize mode
+    auto bottomSlot = area.removeFromBottom (50);
+    gearToolbarBounds = bottomSlot.expanded (0, 2);
+    auto keyRow = bottomSlot;
     pitchModWheels.setBounds (keyRow.removeFromLeft (46).reduced (0, 1));
     keyRow.removeFromLeft (4);
     bottomPiano.setBounds (keyRow.reduced (0, 1));
-    area.removeFromBottom (4);
+    area.removeFromBottom (8); // Clean 8px gap above keyboard
 
-    // Top bar: KINETIK + version in top-left corner, wide PresetBar in center, Edit + Gear on right
+    // Top bar (34px): KINETIK + version in top-left corner, wide PresetBar in center, Edit + Gear on right
     auto topBar = area.removeFromTop (34);
-    leftScaleBtn.setBounds (topBar.removeFromLeft (142).reduced (1));
+    leftScaleBtn.setBounds (topBar.removeFromLeft (146).reduced (1));
     topGearBtn.setBounds   (topBar.removeFromRight (32).reduced (1));
     editModeBtn.setBounds  (topBar.removeFromRight (32).reduced (1));
     topBar.removeFromLeft (12);
     topBar.removeFromRight (12);
     presetBar.setBounds (topBar.reduced (0, 1));
 
+    // Remaining workArea = 760 x 528 (ZERO overlap with Gear Customize Toolbar!)
     auto workArea = area;
 
     if (activeTab == ActiveTab::Main)
     {
         auto mainBody = area;
-        mainBody.removeFromTop (5);
-        auto defIoBar = mainBody.removeFromTop (28);
-        mainBody.removeFromTop (5);
-        auto defWave = mainBody.removeFromTop (152);
         mainBody.removeFromTop (6);
-        auto seqHdr = mainBody.removeFromTop (19);
-        auto defSeqHdr = seqHdr.removeFromLeft (200);
-        mainBody.removeFromTop (3);
-        auto defSeq = mainBody.removeFromTop (216);
-
+        auto defIoBar = mainBody.removeFromTop (28);
+        mainBody.removeFromTop (6);
+        auto defWave = mainBody.removeFromTop (164);
         mainBody.removeFromTop (8);
-        auto bottomCtrl = mainBody.removeFromTop (46);
-        // Uniform rectangular buttons for PLAY, SYNC, LOOP, Clr + integrated BPM & Grid boxes
-        auto defPlay = bottomCtrl.removeFromLeft (58).reduced (2, 4);
-        auto defSync = bottomCtrl.removeFromLeft (56).reduced (2, 4);
-        auto defBpm  = bottomCtrl.removeFromLeft (66).reduced (2, 1);
-        auto defShuf = bottomCtrl.removeFromLeft (96).reduced (2, 2);
-        auto defTrnd = bottomCtrl.removeFromLeft (96).reduced (2, 2);
-        auto defVrnd = bottomCtrl.removeFromLeft (96).reduced (2, 2);
-        auto defGrid = bottomCtrl.removeFromLeft (86).reduced (2, 1);
-        auto defLoop = bottomCtrl.removeFromLeft (56).reduced (2, 4);
-        auto defClr  = bottomCtrl.removeFromLeft (46).reduced (2, 4);
+        auto seqHdr = mainBody.removeFromTop (18);
+        auto defSeqHdr = seqHdr.removeFromLeft (200);
+        mainBody.removeFromTop (4);
+        auto defSeq = mainBody.removeFromTop (236);
+        mainBody.removeFromTop (8);
+        auto bottomCtrl = mainBody.removeFromTop (50);
+
+        // Exact 760px distribution across all 9 bottom controls (flush left-to-right, zero dead gap!)
+        auto defPlay = bottomCtrl.removeFromLeft (64).reduced (2, 5);
+        auto defSync = bottomCtrl.removeFromLeft (64).reduced (2, 5);
+        auto defBpm  = bottomCtrl.removeFromLeft (74).reduced (2, 2);
+        auto defShuf = bottomCtrl.removeFromLeft (118).reduced (3, 2);
+        auto defTrnd = bottomCtrl.removeFromLeft (118).reduced (3, 2);
+        auto defVrnd = bottomCtrl.removeFromLeft (118).reduced (3, 2);
+        auto defGrid = bottomCtrl.removeFromLeft (88).reduced (2, 2);
+        auto defLoop = bottomCtrl.removeFromLeft (64).reduced (2, 5);
+        auto defClr  = bottomCtrl.removeFromLeft (52).reduced (2, 5);
 
         applySavedOrDefault (topIoMasterBar,     audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "ioBar",  defIoBar);
         applySavedOrDefault (mainWaveDisplay,    audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "wave",   defWave);
@@ -3395,39 +3466,6 @@ void MainPluginView::resized()
         applySavedOrDefault (gridUnit,           audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "grid",   defGrid);
         applySavedOrDefault (seqLoopBtn,         audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "loop",   defLoop);
         applySavedOrDefault (seqClearBtn,        audioProcessor.mainCustomBounds, audioProcessor.mainHiddenKeys, "clr",    defClr);
-
-        if (layoutEditMode)
-        {
-            auto barArea = workArea.removeFromTop (58);
-            auto gRow1 = barArea.removeFromTop (27);
-            int colW1 = 104, colW2 = 126;
-            gearGridBox.setBounds        (gRow1.removeFromLeft (colW1).reduced (2, 1));
-            gearFaderStyleBox.setBounds  (gRow1.removeFromLeft (colW1).reduced (2, 1));
-            gearFaderColBox.setBounds  (gRow1.removeFromLeft (colW2).reduced (2, 1));
-            gearKnobStyleBox.setBounds   (gRow1.removeFromLeft (colW1).reduced (2, 1));
-            gearKnobColBox.setBounds   (gRow1.removeFromLeft (colW2).reduced (2, 1));
-
-            barArea.removeFromTop (2);
-            auto gRow2 = barArea.removeFromTop (27);
-            gearSwitchStyleBox.setBounds (gRow2.removeFromLeft (colW1).reduced (2, 1));
-            gearSwitchColBox.setBounds (gRow2.removeFromLeft (colW2).reduced (2, 1));
-            gearDoneBtn.setBounds        (gRow2.removeFromRight (66).reduced (2, 1));
-            gearResetBtn.setBounds       (gRow2.removeFromRight (62).reduced (2, 1));
-            gearDeleteBtn.setBounds      (gRow2.removeFromRight (66).reduced (2, 1));
-
-            customizeOverlay.setBounds (workArea);
-            customizeOverlay.toFront (false);
-            gearGridBox.toFront (false);
-            gearFaderStyleBox.toFront (false);
-            gearFaderColBox.toFront (false);
-            gearKnobStyleBox.toFront (false);
-            gearKnobColBox.toFront (false);
-            gearSwitchStyleBox.toFront (false);
-            gearSwitchColBox.toFront (false);
-            gearDeleteBtn.toFront (false);
-            gearResetBtn.toFront (false);
-            gearDoneBtn.toFront (false);
-        }
     }
     else
     {
@@ -3435,39 +3473,40 @@ void MainPluginView::resized()
         editArea.removeFromTop (6);
         editViewport.setBounds (editArea);
         layoutEditContent (editArea.getWidth());
+    }
 
-        if (layoutEditMode)
-        {
-            auto barArea = workArea.removeFromTop (58);
-            auto gRow1 = barArea.removeFromTop (27);
-            int colW1 = 104, colW2 = 126;
-            gearGridBox.setBounds        (gRow1.removeFromLeft (colW1).reduced (2, 1));
-            gearFaderStyleBox.setBounds  (gRow1.removeFromLeft (colW1).reduced (2, 1));
-            gearFaderColBox.setBounds  (gRow1.removeFromLeft (colW2).reduced (2, 1));
-            gearKnobStyleBox.setBounds   (gRow1.removeFromLeft (colW1).reduced (2, 1));
-            gearKnobColBox.setBounds   (gRow1.removeFromLeft (colW2).reduced (2, 1));
+    if (layoutEditMode)
+    {
+        // Place Gear Customize Toolbar cleanly inside the opaque bottom slot (ZERO overlap with Wave / Meter / Edit!)
+        auto barArea = gearToolbarBounds.reduced (4, 2);
+        auto gRow1 = barArea.removeFromTop (24);
+        int wGrid = 112, wSty = 112, wCol = 152;
+        gearGridBox.setBounds        (gRow1.removeFromLeft (wGrid).reduced (2, 1));
+        gearFaderStyleBox.setBounds  (gRow1.removeFromLeft (wSty).reduced (2, 1));
+        gearFaderColBox.setBounds    (gRow1.removeFromLeft (wCol).reduced (2, 1));
+        gearKnobStyleBox.setBounds   (gRow1.removeFromLeft (wSty).reduced (2, 1));
+        gearKnobColBox.setBounds     (gRow1.removeFromLeft (wCol).reduced (2, 1));
 
-            barArea.removeFromTop (2);
-            auto gRow2 = barArea.removeFromTop (27);
-            gearSwitchStyleBox.setBounds (gRow2.removeFromLeft (colW1).reduced (2, 1));
-            gearSwitchColBox.setBounds (gRow2.removeFromLeft (colW2).reduced (2, 1));
-            gearDoneBtn.setBounds        (gRow2.removeFromRight (66).reduced (2, 1));
-            gearResetBtn.setBounds       (gRow2.removeFromRight (62).reduced (2, 1));
-            gearDeleteBtn.setBounds      (gRow2.removeFromRight (66).reduced (2, 1));
+        barArea.removeFromTop (2);
+        auto gRow2 = barArea.removeFromTop (24);
+        gearSwitchStyleBox.setBounds (gRow2.removeFromLeft (wSty).reduced (2, 1));
+        gearSwitchColBox.setBounds   (gRow2.removeFromLeft (wCol).reduced (2, 1));
+        gearDoneBtn.setBounds        (gRow2.removeFromRight (72).reduced (2, 1));
+        gearResetBtn.setBounds       (gRow2.removeFromRight (72).reduced (2, 1));
+        gearDeleteBtn.setBounds      (gRow2.removeFromRight (72).reduced (2, 1));
 
-            customizeOverlay.setBounds (workArea);
-            customizeOverlay.toFront (false);
-            gearGridBox.toFront (false);
-            gearFaderStyleBox.toFront (false);
-            gearFaderColBox.toFront (false);
-            gearKnobStyleBox.toFront (false);
-            gearKnobColBox.toFront (false);
-            gearSwitchStyleBox.toFront (false);
-            gearSwitchColBox.toFront (false);
-            gearDeleteBtn.toFront (false);
-            gearResetBtn.toFront (false);
-            gearDoneBtn.toFront (false);
-        }
+        customizeOverlay.setBounds (workArea);
+        customizeOverlay.toFront (false);
+        gearGridBox.toFront (false);
+        gearFaderStyleBox.toFront (false);
+        gearFaderColBox.toFront (false);
+        gearKnobStyleBox.toFront (false);
+        gearKnobColBox.toFront (false);
+        gearSwitchStyleBox.toFront (false);
+        gearSwitchColBox.toFront (false);
+        gearDeleteBtn.toFront (false);
+        gearResetBtn.toFront (false);
+        gearDoneBtn.toFront (false);
     }
 }
 
@@ -3476,21 +3515,25 @@ RythmeAudioProcessorEditor::RythmeAudioProcessorEditor (RythmeAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p),
       mainView (p, [this] (float s) { applyUiScale (s); })
 {
+    isUpdatingScale = true;
     setWantsKeyboardFocus (true);
-    setResizable (true, false);
-    setResizeLimits (static_cast<int> (std::round (baseWidth * 0.50f)),
-                     static_cast<int> (std::round (baseHeight * 0.50f)),
-                     static_cast<int> (std::round (baseWidth * 1.50f)) + 8,
-                     static_cast<int> (std::round (baseHeight * 1.50f)) + 8);
-    if (auto* c = getConstrainer())
-        c->setFixedAspectRatio (static_cast<double> (baseWidth) / static_cast<double> (baseHeight));
 
     currentScale = juce::jlimit (0.5f, 1.5f, audioProcessor.uiScale);
+    int initW = static_cast<int> (std::round (baseWidth * currentScale));
+    int initH = static_cast<int> (std::round (baseHeight * currentScale));
+
     addAndMakeVisible (mainView);
     mainView.setBounds (0, 0, baseWidth, baseHeight);
     mainView.setTransform (juce::AffineTransform::scale (currentScale));
-    setSize (static_cast<int> (std::round (baseWidth * currentScale)),
-             static_cast<int> (std::round (baseHeight * currentScale)));
+
+    setSize (initW, initH);
+    setResizable (true, false);
+    setResizeLimits (static_cast<int> (std::round (baseWidth * 0.50f)),
+                     static_cast<int> (std::round (baseHeight * 0.50f)),
+                     static_cast<int> (std::round (baseWidth * 1.50f)),
+                     static_cast<int> (std::round (baseHeight * 1.50f)));
+
+    isUpdatingScale = false;
     startTimerHz (24);
 }
 
@@ -3506,6 +3549,7 @@ bool RythmeAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
 
 void RythmeAudioProcessorEditor::applyUiScale (float newScale)
 {
+    isUpdatingScale = true;
     currentScale = juce::jlimit (0.5f, 1.5f, newScale);
     audioProcessor.uiScale = currentScale;
     audioProcessor.saveUiLayoutToDisk();
@@ -3517,6 +3561,8 @@ void RythmeAudioProcessorEditor::applyUiScale (float newScale)
     mainView.setTransform (juce::AffineTransform::scale (currentScale));
     if (getWidth() != targetW || getHeight() != targetH)
         setSize (targetW, targetH);
+
+    isUpdatingScale = false;
     repaint();
 }
 
@@ -3524,13 +3570,12 @@ void RythmeAudioProcessorEditor::paint (juce::Graphics& g) { g.fillAll (juce::Co
 
 void RythmeAudioProcessorEditor::resized()
 {
-    if (getWidth() > 0 && getHeight() > 0)
+    if (! isUpdatingScale && getWidth() > 0 && getHeight() > 0)
     {
         float sx = getWidth() / static_cast<float> (baseWidth);
         float sy = getHeight() / static_cast<float> (baseHeight);
-        float s = juce::jlimit (0.5f, 1.5f, std::min (sx, sy));
-        currentScale = s;
-        audioProcessor.uiScale = s;
+        currentScale = juce::jlimit (0.5f, 1.5f, std::min (sx, sy));
+        audioProcessor.uiScale = currentScale;
     }
     mainView.setBounds (0, 0, baseWidth, baseHeight);
     mainView.setTransform (juce::AffineTransform::scale (currentScale));

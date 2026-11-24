@@ -163,6 +163,7 @@ private:
     RythmeAudioProcessor& processor;
     int dragStartY = 0;
     float dragStartDb = 0.0f;
+    bool isDraggingKnob = false;
     juce::Rectangle<float> getKnobBounds() const;
 };
 
@@ -251,6 +252,7 @@ public:
     ColorPianoStrip (RythmeAudioProcessor& p);
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
+    void mouseDrag (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
 
 private:
@@ -402,6 +404,8 @@ private:
     std::function<void(float)> scaleCallback;
     ActiveTab activeTab = ActiveTab::Main;
     bool layoutEditMode = false;
+    juce::Rectangle<int> gearToolbarBounds;
+    uint32_t lastSeenStateRevision = 0;
 
     // Custom bounds & hidden keys are stored persistently on audioProcessor
 
@@ -511,6 +515,7 @@ private:
     void refreshGroupBoxes();
     void syncGroupControls();
     void syncFxControls();
+    void syncAllUiFromProcessor();
     void savePresetAction();
     void browseLoadPresetAction();
     void chooseRootLibraryFolder();
@@ -538,6 +543,7 @@ public:
 private:
     RythmeAudioProcessor& audioProcessor;
     float currentScale = 1.0f;
+    bool isUpdatingScale = false;
     MainPluginView mainView;
 
     void applyUiScale (float newScale);

@@ -12,7 +12,7 @@
 #include <set>
 
 #ifndef KINETIK_AUTO_VERSION_STR
-#define KINETIK_AUTO_VERSION_STR "v1.3.3"
+#define KINETIK_AUTO_VERSION_STR "v1.3.4"
 #endif
 
 struct FastSVF
@@ -305,6 +305,8 @@ public:
     std::atomic<int> activeKeyswitchNote { -1 };
     std::atomic<float> seqPlayheadNorm { 0.0f };
     std::atomic<int> lastPlayedNote { -1 };
+    std::array<std::atomic<uint8_t>, 128> activeNotesUi {};
+    std::atomic<uint32_t> stateRevision { 0 };
     std::atomic<bool> internalPlaying { false };
     std::atomic<float> pitchWheelNorm { 0.0f };     // -1.0 to +1.0
     std::atomic<float> modWheelNorm { 0.0f };       // 0.0 to 1.0

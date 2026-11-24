@@ -187,6 +187,7 @@ RythmeAudioProcessor::RythmeAudioProcessor()
 {
     formatManager.registerBasicFormats();
     heldNotesVel.fill (0.0f);
+    for (auto& a : activeNotesUi) a.store (0);
     scopeRing.fill (0.0f);
     groups.emplace_back();
     selectedGroupIndex = 0;
@@ -229,6 +230,7 @@ juce::File RythmeAudioProcessor::getUiLayoutFile() const
 void RythmeAudioProcessor::saveUiLayoutToDisk()
 {
     juce::XmlElement root ("KINETIK_UI_LAYOUT");
+    root.setAttribute ("schemaVersion", 2);
     root.setAttribute ("uiScale", static_cast<double> (uiScale));
     root.setAttribute ("customizeGridStep", customizeGridStep);
     root.setAttribute ("logoStyleId", logoStyleId);
@@ -286,7 +288,11 @@ void RythmeAudioProcessor::loadUiLayoutFromDisk()
     auto xml = juce::XmlDocument::parse (f);
     if (xml == nullptr || ! xml->hasTagName ("KINETIK_UI_LAYOUT")) return;
 
-    uiScale           = juce::jlimit (0.5f, 1.5f, static_cast<float> (xml->getDoubleAttribute ("uiScale", 1.0)));
+    int schemaVer     = xml->getIntAttribute ("schemaVersion", 1);
+    float loadedScale = static_cast<float> (xml->getDoubleAttribute ("uiScale", 1.0));
+    if (schemaVer < 2 && loadedScale < 0.70f)
+        loadedScale = 1.0f; // Auto-heal accidental 50% scale from earlier build
+    uiScale           = juce::jlimit (0.5f, 1.5f, loadedScale);
     customizeGridStep = juce::jlimit (0, 50, xml->getIntAttribute ("customizeGridStep", 20));
     logoStyleId       = juce::jlimit (1, 4, xml->getIntAttribute ("logoStyleId", 1));
     logoColourIdx     = juce::jlimit (0, numPaletteColours - 1, xml->getIntAttribute ("logoColourIdx", 11));
@@ -695,8 +701,8 @@ int RythmeAudioProcessor::createEmptyZone (int key)
     z.realRREnabled = true;
     z.autoLoopZeroCross = true;
     z.seqEvents = createDefaultEvents();
-    z.colourIndex = 11;
-    z.colour = getPaletteColour (11);
+    z.colourIndex = 4;
+    z.colour = getPaletteColour (4);
     zones.push_back (std::move (z));
     selectedZoneIndex = static_cast<int> (zones.size()) - 1;
     return selectedZoneIndex;
@@ -988,6 +994,8 @@ void RythmeAudioProcessor::startVoice (int zoneIdx, int midiNote, float velocity
 void RythmeAudioProcessor::triggerNote (int midiNote, float velocity)
 {
     lastPlayedNote.store (midiNote);
+    if (midiNote >= 0 && midiNote < 128)
+        activeNotesUi[static_cast<size_t> (midiNote)].store (1);
     const juce::ScopedLock sl (zoneLock);
 
     if (isKeyswitchNote (midiNote))
@@ -1014,6 +1022,8 @@ void RythmeAudioProcessor::triggerNote (int midiNote, float velocity)
 
 void RythmeAudioProcessor::releaseNote (int midiNote)
 {
+    if (midiNote >= 0 && midiNote < 128)
+        activeNotesUi[static_cast<size_t> (midiNote)].store (0);
     if (lastPlayedNote.load() == midiNote)
         lastPlayedNote.store (-1);
     for (auto& v : voices)
@@ -1059,6 +1069,8 @@ void RythmeAudioProcessor::uiNoteOn (int midiNote, float velocity)
     {
         if (wasIdle) { seqBarPhase = 0.0; seqPlayheadNorm.store (0.0f); }
         lastPlayedNote.store (midiNote);
+    if (midiNote >= 0 && midiNote < 128)
+        activeNotesUi[static_cast<size_t> (midiNote)].store (1);
         const juce::ScopedLock sl (zoneLock);
         for (int i = 0; i < static_cast<int> (zones.size()); ++i)
         {
@@ -1074,7 +1086,10 @@ void RythmeAudioProcessor::uiNoteOn (int midiNote, float velocity)
 void RythmeAudioProcessor::uiNoteOff (int midiNote)
 {
     if (midiNote >= 0 && midiNote < 128)
+    {
         heldNotesVel[static_cast<size_t> (midiNote)] = 0.0f;
+        activeNotesUi[static_cast<size_t> (midiNote)].store (0);
+    }
     releaseNote (midiNote);
 }
 
@@ -1694,6 +1709,8 @@ bool RythmeAudioProcessor::restoreFullStateFromXml (const juce::XmlElement& xml,
                 z.cutoffHz = static_cast<float> (zx->getDoubleAttribute ("cut", 20000.0));
                 z.resQ = static_cast<float> (zx->getDoubleAttribute ("res", 0.707));
             }
+            juce::String savedZoneName = zx->getStringAttribute ("name", "");
+            bool savedRealRR = zx->getIntAttribute ("realRR", 1) != 0;
             if (auto* layersXml = zx->getChildByName ("LAYERS"))
             {
                 for (auto* lx : layersXml->getChildIterator())
@@ -1705,6 +1722,8 @@ bool RythmeAudioProcessor::restoreFullStateFromXml (const juce::XmlElement& xml,
             {
                 const juce::ScopedLock sl (zoneLock);
                 auto& z = zones[static_cast<size_t> (idx)];
+                if (savedZoneName.isNotEmpty()) z.name = savedZoneName;
+                z.realRREnabled = savedRealRR;
                 if (! z.layers.empty())
                     z.selectedLayerIndex = juce::jlimit (0, static_cast<int> (z.layers.size()) - 1, wantedLayerIdx);
             }
@@ -1727,6 +1746,7 @@ bool RythmeAudioProcessor::restoreFullStateFromXml (const juce::XmlElement& xml,
         selectedZoneIndex = zones.empty() ? -1 : 0;
     }
 
+    stateRevision.fetch_add (1);
     return true;
 }
 
