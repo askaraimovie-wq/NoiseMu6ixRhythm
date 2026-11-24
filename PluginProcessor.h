@@ -9,6 +9,10 @@
 #include <functional>
 #include <string>
 
+#ifndef RYTHME_AUTO_VERSION_STR
+#define RYTHME_AUTO_VERSION_STR "v1.2.2"
+#endif
+
 struct FastSVF
 {
     float ic1eq = 0.0f;
@@ -100,7 +104,7 @@ struct SampleGroup
     juce::String name { "Group 1" };
     bool muted = false;
     bool soloed = false;
-    int keyswitchNote = -1; // -1 = None, 0..35
+    int keyswitchNote = -1;
     float volume = 1.0f;
     float pan = 0.0f;
     std::array<SimpleFxSlot, numFxSlots> fxSlots;
@@ -177,6 +181,29 @@ struct LibraryCategoryEntry
     std::vector<juce::File> items;
 };
 
+// Patcher / Routing Node & Wire
+struct PatchNode
+{
+    juce::String id;
+    juce::String title;
+    juce::String category; // "SOURCE", "SWITCH", "LEVEL", "FX", "CUSTOM"
+    float x = 20.0f;
+    float y = 20.0f;
+    float w = 132.0f;
+    float h = 54.0f;
+    bool active = true;
+    float level = 0.85f;
+    int styleId = 1; // 1..10
+};
+
+struct PatchWire
+{
+    juce::String fromNodeId;
+    juce::String toNodeId;
+    float gain = 1.0f;
+    bool enabled = true;
+};
+
 class RythmeAudioProcessor : public juce::AudioProcessor
 {
 public:
@@ -195,7 +222,9 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "RYTHME"; }
+    const juce::String getName() const override { return "RYTHME " + getBuildVersionString(); }
+    static juce::String getBuildVersionString() { return juce::String (RYTHME_AUTO_VERSION_STR); }
+
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -223,6 +252,7 @@ public:
     void resetSelectedZoneDefaults();
     void clearSelectedZoneRhythm();
     float snapNormToZeroCrossing (int zoneIndex, float rawNorm) const;
+    float getSelectedZonePlayheadNorm() const;
 
     void triggerNote (int midiNote, float velocity);
     void releaseNote (int midiNote);
@@ -232,13 +262,20 @@ public:
     bool savePresetMn6x (const juce::File& file);
     bool loadPresetMn6x (const juce::File& file);
 
-    // Persistent Library Registry (survives across reopen/reload)
+    // Persistent Library Registry
     void addLibraryFolderPersistent (const juce::File& folder);
     void sortLibraryPersistent();
     void removeLibraryEntryPersistent (int catIdx);
     void toggleLibraryCategoryExpanded (int catIdx);
     void setLoadedItemInPanel (const juce::String& displayName, const juce::File& file, int keyHint = -1);
     void clearLoadedItemPanel();
+
+    // Patcher Routing helpers
+    void initDefaultPatchGraph();
+    void addCustomPatchNode (const juce::String& title, const juce::String& category);
+    void addPatchWire (const juce::String& fromId, const juce::String& toId);
+    void togglePatchWire (size_t idx);
+    void removePatchWire (size_t idx);
 
     int getGridDivisions() const;
     double getCurrentSampleRate() const { return currentSampleRate; }
@@ -253,14 +290,27 @@ public:
     std::vector<SampleZone> zones;
     int selectedZoneIndex = -1;
 
-    // Persistent library categories + currently mounted item on MAIN panel
     std::vector<LibraryCategoryEntry> libraryCategories;
     bool loadedItemActive = false;
     juce::String loadedItemName;
     juce::File loadedItemFile;
     int loadedItemKey = -1;
 
+    // Customizable Brand / Logo / Title & Global Styles (1..10)
+    juce::String brandLetters { "N6" };
+    juce::String pluginTitleText { "RYTHME" };
+    int logoStyleId = 1;   // 1..4
+    int knobStyleId = 1;   // 1..10 (shared across all knobs)
+    int faderStyleId = 1;  // 1..10 (shared across all faders)
+    int switchStyleId = 1; // 1..10 (shared across all switches)
+
+    // Patcher graph
+    std::vector<PatchNode> patchNodes;
+    std::vector<PatchWire> patchWires;
+
     std::atomic<bool> selectGroupOnly { true };
+    std::atomic<bool> seqBypass { false };
+    std::atomic<bool> fxBypass { false };
     std::atomic<int> activeKeyswitchNote { -1 };
     std::atomic<float> seqPlayheadNorm { 0.0f };
     std::atomic<int> lastPlayedNote { -1 };

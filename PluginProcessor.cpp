@@ -162,9 +162,55 @@ RythmeAudioProcessor::RythmeAudioProcessor()
     groups.emplace_back();
     selectedGroupIndex = 0;
     loadLibraryRegistry();
+    initDefaultPatchGraph();
 }
 
 RythmeAudioProcessor::~RythmeAudioProcessor() = default;
+
+void RythmeAudioProcessor::initDefaultPatchGraph()
+{
+    patchNodes.clear();
+    patchWires.clear();
+
+    patchNodes.push_back ({ "n_seq",  "RHYTHM SEQ",  "SOURCE", 24.0f,  28.0f,  136.0f, 52.0f, true, 1.0f, 1 });
+    patchNodes.push_back ({ "n_sw1",  "LOOP SWITCH", "SWITCH", 200.0f, 28.0f,  136.0f, 52.0f, true, 1.0f, 2 });
+    patchNodes.push_back ({ "n_lvl1", "GROUP LEVEL", "LEVEL",  376.0f, 28.0f,  136.0f, 52.0f, true, 0.85f, 3 });
+    patchNodes.push_back ({ "n_fx",   "FX BUS",      "FX",     552.0f, 28.0f,  136.0f, 52.0f, true, 1.0f, 4 });
+
+    patchWires.push_back ({ "n_seq",  "n_sw1",  1.0f, true });
+    patchWires.push_back ({ "n_sw1",  "n_lvl1", 0.9f, true });
+    patchWires.push_back ({ "n_lvl1", "n_fx",   1.0f, true });
+}
+
+void RythmeAudioProcessor::addCustomPatchNode (const juce::String& title, const juce::String& category)
+{
+    int idx = static_cast<int> (patchNodes.size());
+    float nx = 24.0f + (idx % 4) * 168.0f;
+    float ny = 108.0f + (idx / 4) * 76.0f;
+    juce::String id = "n_custom_" + juce::String (idx + 1);
+    patchNodes.push_back ({ id, title.isEmpty() ? ("Node " + juce::String (idx + 1)) : title,
+                            category, nx, ny, 136.0f, 52.0f, true, 0.8f, 5 });
+}
+
+void RythmeAudioProcessor::addPatchWire (const juce::String& fromId, const juce::String& toId)
+{
+    if (fromId.isEmpty() || toId.isEmpty() || fromId == toId) return;
+    for (const auto& w : patchWires)
+        if (w.fromNodeId == fromId && w.toNodeId == toId) return;
+    patchWires.push_back ({ fromId, toId, 1.0f, true });
+}
+
+void RythmeAudioProcessor::togglePatchWire (size_t idx)
+{
+    if (idx < patchWires.size())
+        patchWires[idx].enabled = ! patchWires[idx].enabled;
+}
+
+void RythmeAudioProcessor::removePatchWire (size_t idx)
+{
+    if (idx < patchWires.size())
+        patchWires.erase (patchWires.begin() + static_cast<long> (idx));
+}
 
 juce::File RythmeAudioProcessor::getRegistryFile() const
 {
@@ -217,7 +263,6 @@ void RythmeAudioProcessor::loadLibraryRegistry()
                 if (f.existsAsFile()) cat.items.push_back (f);
             }
         }
-        // If items weren't explicitly saved or folder has new files, refresh from folder
         if (cat.items.empty() && cat.folder.isDirectory())
         {
             for (const auto& f : cat.folder.findChildFiles (juce::File::findFiles, true, "*.wav;*.aiff;*.flac;*.mn6x"))
@@ -595,6 +640,28 @@ float RythmeAudioProcessor::snapNormToZeroCrossing (int zoneIndex, float rawNorm
     return rawNorm;
 }
 
+float RythmeAudioProcessor::getSelectedZonePlayheadNorm() const
+{
+    for (const auto& v : voices)
+    {
+        if (v.active && v.zoneIndex == selectedZoneIndex)
+        {
+            const juce::ScopedLock sl (zoneLock);
+            if (v.zoneIndex >= 0 && v.zoneIndex < static_cast<int> (zones.size()))
+            {
+                const auto& z = zones[static_cast<size_t> (v.zoneIndex)];
+                if (! z.layers.empty())
+                {
+                    int total = z.layers[static_cast<size_t> (juce::jlimit (0, static_cast<int> (z.layers.size()) - 1, v.layerIndex))].buffer.getNumSamples();
+                    if (total > 0)
+                        return juce::jlimit (0.0f, 1.0f, static_cast<float> (v.currentPos / total));
+                }
+            }
+        }
+    }
+    return -1.0f;
+}
+
 bool RythmeAudioProcessor::hasAnySoloedGroup() const
 {
     for (const auto& g : groups)
@@ -787,7 +854,7 @@ void RythmeAudioProcessor::uiNoteOn (int midiNote, float velocity)
         }
     }
 
-    bool seqLoopOn = apvts.getRawParameterValue ("seqLoop")->load() > 0.5f;
+    bool seqLoopOn = ! seqBypass.load() && (apvts.getRawParameterValue ("seqLoop")->load() > 0.5f);
     bool wasIdle = ! hasAnyHeldNote() && ! internalPlaying.load();
 
     if (midiNote >= 0 && midiNote < 128)
@@ -828,7 +895,7 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     int numSamples = buffer.getNumSamples();
     if (numSamples <= 0) return;
 
-    bool seqLoopOn = apvts.getRawParameterValue ("seqLoop")->load() > 0.5f;
+    bool seqLoopOn = ! seqBypass.load() && (apvts.getRawParameterValue ("seqLoop")->load() > 0.5f);
     bool hostSyncOn = apvts.getRawParameterValue ("hostSync")->load() > 0.5f;
     double bpm = static_cast<double> (apvts.getRawParameterValue ("internalBpm")->load());
     bool dawPlaying = false;
@@ -939,6 +1006,7 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     float* outR = buffer.getWritePointer (1);
 
     bool anySolo = hasAnySoloedGroup();
+    bool bypassAllFx = fxBypass.load();
 
     for (int gIdx = 0; gIdx < static_cast<int> (groups.size()); ++gIdx)
     {
@@ -952,8 +1020,9 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
             { hasActiveVoice = true; break; }
 
         bool hasTailFx = false;
-        for (const auto& slot : grp.fxSlots)
-            if (slot.enabled && (slot.type == SimpleFxType::Delay || slot.type == SimpleFxType::Reverb)) { hasTailFx = true; break; }
+        if (! bypassAllFx)
+            for (const auto& slot : grp.fxSlots)
+                if (slot.enabled && (slot.type == SimpleFxType::Delay || slot.type == SimpleFxType::Reverb)) { hasTailFx = true; break; }
 
         if (! hasActiveVoice && ! hasTailFx)
             continue;
@@ -1006,7 +1075,7 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
                     float sL = srcL[posInt] + frac * (srcL[posInt + 1] - srcL[posInt]);
                     float sR = srcR[posInt] + frac * (srcR[posInt + 1] - srcR[posInt]);
 
-                    // Loop Crossfade near loop end
+                    // Loop Crossfade near loop end to remove loop repeat click
                     if (z.sampleLoop && ! z.reverse && xfadeSamps > 6 && posInt >= lEndSample - xfadeSamps)
                     {
                         float alpha = static_cast<float> (posInt - (lEndSample - xfadeSamps)) / static_cast<float> (xfadeSamps);
@@ -1015,7 +1084,6 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
                         sR = sR * (1.0f - alpha) + srcR[altPos] * alpha;
                     }
 
-                    // Mouse-dragged Start Fade-In & End Fade-Out
                     float edgeGain = 1.0f;
                     if (fadeInSamps > 4 && (posInt - startSample) < fadeInSamps)
                         edgeGain *= static_cast<float> (posInt - startSample) / static_cast<float> (fadeInSamps);
@@ -1049,8 +1117,9 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
             }
         }
 
-        for (auto& slot : grp.fxSlots)
-            slot.processStereo (gL, gR, numSamples, currentSampleRate);
+        if (! bypassAllFx)
+            for (auto& slot : grp.fxSlots)
+                slot.processStereo (gL, gR, numSamples, currentSampleRate);
 
         float panAngle = (juce::jlimit (-1.0f, 1.0f, grp.pan) + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
         float gGL = grp.volume * std::cos (panAngle) * 1.41421356f;
@@ -1069,6 +1138,12 @@ bool RythmeAudioProcessor::savePresetMn6x (const juce::File& file)
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
     xml->setAttribute ("presetName", currentPresetName);
+    xml->setAttribute ("brandLetters", brandLetters);
+    xml->setAttribute ("pluginTitleText", pluginTitleText);
+    xml->setAttribute ("logoStyleId", logoStyleId);
+    xml->setAttribute ("knobStyleId", knobStyleId);
+    xml->setAttribute ("faderStyleId", faderStyleId);
+    xml->setAttribute ("switchStyleId", switchStyleId);
 
     const juce::ScopedLock sl (zoneLock);
     auto* groupsXml = xml->createNewChildElement ("GROUPS");
@@ -1153,6 +1228,12 @@ bool RythmeAudioProcessor::loadPresetMn6x (const juce::File& file)
 
     apvts.replaceState (juce::ValueTree::fromXml (*xml));
     currentPresetName = xml->getStringAttribute ("presetName", file.getFileNameWithoutExtension());
+    brandLetters = xml->getStringAttribute ("brandLetters", "N6");
+    pluginTitleText = xml->getStringAttribute ("pluginTitleText", "RYTHME");
+    logoStyleId = juce::jlimit (1, 4, xml->getIntAttribute ("logoStyleId", 1));
+    knobStyleId = juce::jlimit (1, 10, xml->getIntAttribute ("knobStyleId", 1));
+    faderStyleId = juce::jlimit (1, 10, xml->getIntAttribute ("faderStyleId", 1));
+    switchStyleId = juce::jlimit (1, 10, xml->getIntAttribute ("switchStyleId", 1));
     currentPresetFile = file;
 
     if (auto* groupsXml = xml->getChildByName ("GROUPS"))

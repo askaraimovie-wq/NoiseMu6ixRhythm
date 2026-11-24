@@ -1,13 +1,10 @@
-# RYTHME v1.2.1 (VST3)
+# RYTHME (Auto-Versioning VST3)
 
-## இந்த v1.2.1 பதிப்பில் அமைக்கப்பட்டுள்ளவை:
-1. **Persistent Expandable Library + Mounted Card `X` Close:**
-   - ஒருமுறை சேர்த்த Library (`DRUMS` → `Kick`) நிரந்தரமாகச் சேமிக்கப்படும்; Category பாக்ஸைக் கிளிக் செய்தால் திறக்கும்/மூடும்.
-   - `MAIN` பக்கத்தில் Mounted Card-ல் **`X`** அழுத்தினால் காலியாகி (`Empty`) விடும்; மீண்டும் ஐட்டத்தைக் கிளிக் செய்தால் லோட் ஆகும்.
-2. **Group Controls (`EDIT` பேஜ்):**
-   - `+ Grp`, `Del Grp`, `M` (Mute), `S` (Solo), **`Sel Grp`** (தேர்ந்தெடுத்த குரூப் மட்டும் மேப்பில் தெரிய), `KS`, மற்றும் **Horizontal `Group Vol` & `Group Pan` Faders** (Group 1/2 X-Fade இல்லை).
-3. **Wave Editor + `Auto Loop Z-Cross` + `Crossfade` (Loop Click Removal):**
-   - லூப் மீண்டும் தொடங்கும் இடத்தில் "டிக்" சத்தம் வராமல் மென்மையாகக் கலக்க **`Crossfade`** Horizontal Fader மற்றும் **`Auto Loop Z-Cross`** சுவிட்ச்.
-   - `Start`, `End`, `Loop Start`, `Loop End` + `Fade In / Fade Out` மவுஸ் ஹேண்டில்கள்.
-4. **All Horizontal Faders + Divider Line for Effects:**
-   - Sample & Effects கண்ட்ரோல்கள் அனைத்தும் **Horizontal Faders**-ஆக மாற்றப்பட்டு, Effects பகுதிக்கு மேலே பிரிக்கும் கோடு வைக்கப்பட்டுள்ளது.
+## இந்த வெளியீட்டில் சேர்க்கப்பட்டுள்ளவை:
+1. **Sequential Auto-Versioning & `.vst3` பெயர்:**
+   - `v1.2.2` → `v1.2.3` → `v1.2.4` → `v1.2.5` → `v1.2.6` எனத் தானாகத் தொடரும் வகையில் `.github/workflows/build.yml` மற்றும் `CMakeLists.txt` அமைக்கப்பட்டுள்ளன.
+   - அவுட்புட் ஃபைல் மற்றும் பிளக்கின் பெயரில் வெர்ஷன் சேர்ந்து வரும் (`RYTHME v1.2.2.vst3` போன்றது).
+2. **`MAIN`, `EDIT`, மற்றும் `EDIT PANEL`:**
+   - `EDIT PANEL`-க்குள் `Grid: Free`, `10x`, `20x`, `30x`, `40x`, `50x`, `Knob Style 1..10`, `Fader Style 1..10`, `Switch Style 1..10`, Logo/Title எடிட்டர், Patcher-style Node/Wire இணைப்பு (`+ Add Node`, இழுத்து நகர்த்தல்/கீழ்-வலது Resize, Port இணைப்பு), கீழே `MAIN PAGE` / `EDIT PAGE` தேர்வு மற்றும் `DONE` பட்டன்.
+3. **`MAIN` பக்கத்தில் Live Waveform Display:**
+   - S/E மார்க்கர்கள் இல்லாமல் பிளே ஆகும் கீ-யின் Waveform மற்றும் Playhead காட்டும் டிஸ்ப்ளே.

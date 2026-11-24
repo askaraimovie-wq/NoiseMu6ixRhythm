@@ -2,16 +2,23 @@
 #include <algorithm>
 #include <cmath>
 
+static juce::Colour getFaderThemeColour (int styleId)
+{
+    static const juce::Colour cols[10] = {
+        juce::Colour (0xff4ca3ff), juce::Colour (0xffff5599), juce::Colour (0xff4cc98f),
+        juce::Colour (0xffe8a138), juce::Colour (0xffa66cff), juce::Colour (0xff38c4d9),
+        juce::Colour (0xffee5253), juce::Colour (0xff2eb872), juce::Colour (0xffe04f8a),
+        juce::Colour (0xffd9c838)
+    };
+    return cols[juce::jlimit (0, 9, styleId - 1)];
+}
+
 // ---------------- HorizontalFader ----------------
 HorizontalFader::HorizontalFader (const juce::String& labelText)
 {
     slider.setSliderStyle (juce::Slider::LinearHorizontal);
     slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 44, 15);
-    slider.setColour (juce::Slider::trackColourId, juce::Colour (0xff4ca3ff));
-    slider.setColour (juce::Slider::thumbColourId, juce::Colour (0xffff66aa));
-    slider.setColour (juce::Slider::backgroundColourId, juce::Colour (0xff121720));
-    slider.setColour (juce::Slider::textBoxTextColourId, juce::Colours::lightgrey);
-    slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    applyFaderStyle (1);
     addAndMakeVisible (slider);
 
     label.setText (labelText, juce::dontSendNotification);
@@ -21,6 +28,16 @@ HorizontalFader::HorizontalFader (const juce::String& labelText)
     addAndMakeVisible (label);
 }
 
+void HorizontalFader::applyFaderStyle (int styleId)
+{
+    auto c = getFaderThemeColour (styleId);
+    slider.setColour (juce::Slider::trackColourId, c);
+    slider.setColour (juce::Slider::thumbColourId, c.brighter (0.35f));
+    slider.setColour (juce::Slider::backgroundColourId, (styleId % 2 == 0) ? juce::Colour (0xff191e2b) : juce::Colour (0xff121720));
+    slider.setColour (juce::Slider::textBoxTextColourId, juce::Colours::lightgrey);
+    slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+}
+
 void HorizontalFader::resized()
 {
     auto r = getLocalBounds();
@@ -28,10 +45,11 @@ void HorizontalFader::resized()
     slider.setBounds (r);
 }
 
-// ---------------- N6BrandHeader (Modern N6 Logo + RYTHME Title) ----------------
-N6BrandHeader::N6BrandHeader (std::function<void()> onClickMenu) : onClick (std::move (onClickMenu)) {}
+// ---------------- BrandLogoHeader ----------------
+BrandLogoHeader::BrandLogoHeader (RythmeAudioProcessor& p, std::function<void()> onClickMenu)
+    : processor (p), onClick (std::move (onClickMenu)) {}
 
-void N6BrandHeader::paint (juce::Graphics& g)
+void BrandLogoHeader::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
     g.setColour (juce::Colour (0xff141923));
@@ -40,36 +58,69 @@ void N6BrandHeader::paint (juce::Graphics& g)
     g.drawRoundedRectangle (r.reduced (0.5f), 6.0f, 1.0f);
 
     auto badge = r.removeFromLeft (46.0f).reduced (5.0f, 4.0f);
-    juce::Path shield;
     float cx = badge.getCentreX();
     float cy = badge.getCentreY();
-    float rx = badge.getWidth() * 0.48f;
-    float ry = badge.getHeight() * 0.48f;
-    shield.startNewSubPath (cx, cy - ry);
-    shield.lineTo (cx + rx, cy - ry * 0.45f);
-    shield.lineTo (cx + rx * 0.85f, cy + ry * 0.55f);
-    shield.lineTo (cx, cy + ry);
-    shield.lineTo (cx - rx * 0.85f, cy + ry * 0.55f);
-    shield.lineTo (cx - rx, cy - ry * 0.45f);
-    shield.closeSubPath();
+    float rx = badge.getWidth() * 0.46f;
+    float ry = badge.getHeight() * 0.46f;
 
-    juce::ColourGradient grad (juce::Colour (0xff2b5876), badge.getX(), badge.getY(),
-                               juce::Colour (0xff4e4376), badge.getRight(), badge.getBottom(), false);
-    g.setGradientFill (grad);
-    g.fillPath (shield);
-    g.setColour (juce::Colour (0xff66b3ff));
-    g.strokePath (shield, juce::PathStrokeType (1.4f));
+    int lStyle = juce::jlimit (1, 4, processor.logoStyleId);
+    if (lStyle == 1)
+    {
+        juce::Path shield;
+        shield.startNewSubPath (cx, cy - ry);
+        shield.lineTo (cx + rx, cy - ry * 0.45f);
+        shield.lineTo (cx + rx * 0.85f, cy + ry * 0.55f);
+        shield.lineTo (cx, cy + ry);
+        shield.lineTo (cx - rx * 0.85f, cy + ry * 0.55f);
+        shield.lineTo (cx - rx, cy - ry * 0.45f);
+        shield.closeSubPath();
+        g.setColour (juce::Colour (0xff2b5876));
+        g.fillPath (shield);
+        g.setColour (juce::Colour (0xff66b3ff));
+        g.strokePath (shield, juce::PathStrokeType (1.4f));
+    }
+    else if (lStyle == 2)
+    {
+        g.setColour (juce::Colour (0xff3b235a));
+        g.fillRoundedRectangle (badge, 8.0f);
+        g.setColour (juce::Colour (0xffff66aa));
+        g.drawRoundedRectangle (badge.reduced (0.5f), 8.0f, 1.5f);
+    }
+    else if (lStyle == 3)
+    {
+        juce::Path hex;
+        for (int i = 0; i < 6; ++i)
+        {
+            float ang = juce::MathConstants<float>::pi / 3.0f * i - juce::MathConstants<float>::pi * 0.5f;
+            float px = cx + rx * std::cos (ang);
+            float py = cy + ry * std::sin (ang);
+            if (i == 0) hex.startNewSubPath (px, py); else hex.lineTo (px, py);
+        }
+        hex.closeSubPath();
+        g.setColour (juce::Colour (0xff1d3d35));
+        g.fillPath (hex);
+        g.setColour (juce::Colour (0xff4cc98f));
+        g.strokePath (hex, juce::PathStrokeType (1.4f));
+    }
+    else
+    {
+        g.setColour (juce::Colour (0xff472a18));
+        g.fillEllipse (badge);
+        g.setColour (juce::Colour (0xffe8a138));
+        g.drawEllipse (badge.reduced (0.5f), 1.5f);
+    }
 
     g.setColour (juce::Colours::white);
-    g.setFont (juce::FontOptions (14.5f, juce::Font::bold));
-    g.drawText ("N6", badge, juce::Justification::centred, false);
+    g.setFont (juce::FontOptions (13.5f, juce::Font::bold));
+    g.drawText (processor.brandLetters.isEmpty() ? "N6" : processor.brandLetters, badge, juce::Justification::centred, false);
 
     g.setColour (juce::Colours::white);
-    g.setFont (juce::FontOptions (19.0f, juce::Font::bold));
-    g.drawText ("RYTHME", r.reduced (4.0f, 0.0f), juce::Justification::centredLeft, false);
+    g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
+    g.drawText (processor.pluginTitleText.isEmpty() ? "RYTHME" : processor.pluginTitleText,
+                r.reduced (4.0f, 0.0f), juce::Justification::centredLeft, true);
 }
 
-// ---------------- MountedSoundCard (Side Panel with 'X' Close Button -> Empty) ----------------
+// ---------------- MountedSoundCard ----------------
 MountedSoundCard::MountedSoundCard (std::function<void()> onCloseClicked) : onClose (std::move (onCloseClicked))
 {
     closeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff5c2633));
@@ -116,6 +167,63 @@ void MountedSoundCard::resized()
 {
     auto r = getLocalBounds().reduced (4);
     closeBtn.setBounds (r.removeFromRight (22).withSizeKeepingCentre (22, 22));
+}
+
+// ---------------- LiveMainWaveDisplay ----------------
+LiveMainWaveDisplay::LiveMainWaveDisplay (RythmeAudioProcessor& p) : processor (p) {}
+
+void LiveMainWaveDisplay::paint (juce::Graphics& g)
+{
+    auto area = getLocalBounds();
+    g.fillAll (juce::Colour (0xff111620));
+    g.setColour (juce::Colour (0xff2c374b));
+    g.drawRect (area, 1);
+
+    const juce::ScopedLock sl (processor.zoneLock);
+    int zIdx = processor.selectedZoneIndex;
+    if (zIdx < 0 || zIdx >= static_cast<int> (processor.zones.size()))
+    {
+        g.setColour (juce::Colour (0xff5d6b82));
+        g.setFont (11.0f);
+        g.drawText ("PLAYING WAVEFORM", area, juce::Justification::centred);
+        return;
+    }
+
+    const auto& z = processor.zones[static_cast<size_t> (zIdx)];
+    if (z.layers.empty()) return;
+
+    int lIdx = juce::jlimit (0, static_cast<int> (z.layers.size()) - 1, z.selectedLayerIndex);
+    const auto& buf = z.layers[static_cast<size_t> (lIdx)].buffer;
+    int numSamples = buf.getNumSamples();
+    if (numSamples <= 1) return;
+
+    const float* data = buf.getReadPointer (0);
+    float midY = area.getCentreY();
+    float halfH = area.getHeight() * 0.42f;
+
+    g.setColour (juce::Colour (0xff1d2433));
+    g.drawHorizontalLine (static_cast<int> (midY), static_cast<float> (area.getX()), static_cast<float> (area.getRight()));
+
+    juce::Path path;
+    path.startNewSubPath (static_cast<float> (area.getX()), midY);
+    int step = std::max (1, numSamples / std::max (1, area.getWidth()));
+    for (int x = 0; x < area.getWidth(); ++x)
+    {
+        int idx = std::min (numSamples - 1, x * step);
+        path.lineTo (static_cast<float> (area.getX() + x), midY - data[idx] * halfH);
+    }
+    g.setColour (z.colour.brighter (0.3f));
+    g.strokePath (path, juce::PathStrokeType (1.4f));
+
+    float phNorm = processor.getSelectedZonePlayheadNorm();
+    if (phNorm >= 0.0f && phNorm <= 1.0f)
+    {
+        float px = area.getX() + phNorm * area.getWidth();
+        g.setColour (juce::Colour (0x55ffffff));
+        g.fillRect (static_cast<float> (area.getX()), static_cast<float> (area.getY()), px - area.getX(), static_cast<float> (area.getHeight()));
+        g.setColour (juce::Colours::white);
+        g.drawVerticalLine (static_cast<int> (px), static_cast<float> (area.getY()), static_cast<float> (area.getBottom()));
+    }
 }
 
 // ---------------- ColorPianoStrip ----------------
@@ -624,7 +732,7 @@ void KeyMapperComponent::mouseUp (const juce::MouseEvent&)
     if (pressedKey >= 0) { processor.uiNoteOff (pressedKey); pressedKey = -1; repaint(); }
 }
 
-// ---------------- WaveEditorComponent (Start/End/LoopStart/LoopEnd + Fade In/Out Handles) ----------------
+// ---------------- WaveEditorComponent ----------------
 WaveEditorComponent::WaveEditorComponent (RythmeAudioProcessor& p) : processor (p) {}
 
 void WaveEditorComponent::paint (juce::Graphics& g)
@@ -687,7 +795,6 @@ void WaveEditorComponent::paint (juce::Graphics& g)
     g.setColour (z.colour.brighter (0.25f));
     g.strokePath (p, juce::PathStrokeType (1.2f));
 
-    // Draw Fade-In & Fade-Out ramp lines + drag handles on Start & End regions
     float topLineY = midY - halfH;
     if (z.fadeInNorm > 0.001f)
     {
@@ -700,12 +807,10 @@ void WaveEditorComponent::paint (juce::Graphics& g)
         g.drawLine (fadeOutX, topLineY, endX, midY, 1.5f);
     }
 
-    // Fade-In & Fade-Out small handle dots
     g.setColour (juce::Colour (0xffffd32a));
     g.fillEllipse (fadeInX - 5.0f, topLineY - 5.0f, 10.0f, 10.0f);
     g.fillEllipse (fadeOutX - 5.0f, topLineY - 5.0f, 10.0f, 10.0f);
 
-    // Start (S) & End (E) markers
     g.setColour (juce::Colour (0xffff5599));
     g.drawVerticalLine (static_cast<int> (startX), static_cast<float> (area.getY()), static_cast<float> (area.getBottom()));
     g.drawVerticalLine (static_cast<int> (endX), static_cast<float> (area.getY()), static_cast<float> (area.getBottom()));
@@ -715,7 +820,6 @@ void WaveEditorComponent::paint (juce::Graphics& g)
     g.drawText ("S", static_cast<int> (startX), area.getY(), 14, 13, juce::Justification::centred);
     g.drawText ("E", static_cast<int> (endX - 14.0f), area.getY(), 14, 13, juce::Justification::centred);
 
-    // Loop Start (LS) & Loop End (LE) markers when LOOP is ON
     if (z.sampleLoop)
     {
         g.setColour (juce::Colour (0xff4cc98f));
@@ -745,16 +849,8 @@ void WaveEditorComponent::mouseDown (const juce::MouseEvent& e)
     float fadeOutX = endX - z.fadeOutNorm * spanW;
     float topLineY = getHeight() * 0.5f - getHeight() * 0.40f;
 
-    if (std::abs (e.x - fadeInX) <= 7.0f && std::abs (e.y - topLineY) <= 12.0f)
-    {
-        activeDrag = DragTarget::FadeIn;
-        return;
-    }
-    if (std::abs (e.x - fadeOutX) <= 7.0f && std::abs (e.y - topLineY) <= 12.0f)
-    {
-        activeDrag = DragTarget::FadeOut;
-        return;
-    }
+    if (std::abs (e.x - fadeInX) <= 8.0f && std::abs (e.y - topLineY) <= 14.0f) { activeDrag = DragTarget::FadeIn; return; }
+    if (std::abs (e.x - fadeOutX) <= 8.0f && std::abs (e.y - topLineY) <= 14.0f) { activeDrag = DragTarget::FadeOut; return; }
 
     float dS = std::abs (normX - z.startNorm);
     float dE = std::abs (normX - z.endNorm);
@@ -838,7 +934,7 @@ void RhythmSequencerComponent::paint (juce::Graphics& g)
         g.drawVerticalLine (static_cast<int> (x), static_cast<float> (area.getY()), static_cast<float> (area.getBottom()));
     }
 
-    if (processor.apvts.getRawParameterValue ("seqLoop")->load() > 0.5f)
+    if (! processor.seqBypass.load() && processor.apvts.getRawParameterValue ("seqLoop")->load() > 0.5f)
     {
         float px = area.getX() + processor.seqPlayheadNorm.load() * area.getWidth();
         g.setColour (juce::Colour (0x99ffffff));
@@ -849,7 +945,7 @@ void RhythmSequencerComponent::paint (juce::Graphics& g)
     if (processor.zones.empty() || processor.selectedZoneIndex < 0 || processor.selectedZoneIndex >= static_cast<int> (processor.zones.size()))
     {
         g.setColour (juce::Colour (0xff8a7a99)); g.setFont (11.0f);
-        g.drawText ("Select a key above to edit its rhythm pattern | Turn ON LOOP & press PLAY or Spacebar", area, juce::Justification::centred);
+        g.drawText ("Select a key or item to edit rhythm | Turn ON LOOP & press PLAY or Spacebar", area, juce::Justification::centred);
         return;
     }
 
@@ -917,19 +1013,220 @@ void RhythmSequencerComponent::mouseDrag (const juce::MouseEvent& e)
 
 void RhythmSequencerComponent::mouseUp (const juce::MouseEvent&) { draggedEventIdx = -1; repaint(); }
 
+// ---------------- PatcherRoutingCanvas ----------------
+PatcherRoutingCanvas::PatcherRoutingCanvas (RythmeAudioProcessor& p, int gridPx)
+    : processor (p), gridStepPx (gridPx) {}
+
+float PatcherRoutingCanvas::snapVal (float v) const
+{
+    if (gridStepPx <= 1) return v;
+    float step = static_cast<float> (gridStepPx);
+    return std::round (v / step) * step;
+}
+
+void PatcherRoutingCanvas::paint (juce::Graphics& g)
+{
+    auto area = getLocalBounds();
+    g.fillAll (juce::Colour (0xff10151e));
+    g.setColour (juce::Colour (0xff313f57));
+    g.drawRect (area, 1);
+
+    if (gridStepPx > 1)
+    {
+        g.setColour (juce::Colour (0xff1c2534));
+        for (int x = gridStepPx; x < area.getWidth(); x += gridStepPx)
+            g.drawVerticalLine (x, 0.0f, static_cast<float> (area.getHeight()));
+        for (int y = gridStepPx; y < area.getHeight(); y += gridStepPx)
+            g.drawHorizontalLine (y, 0.0f, static_cast<float> (area.getWidth()));
+    }
+
+    const juce::ScopedLock sl (processor.zoneLock);
+
+    // Draw connecting wires (FL Studio Patcher style cables)
+    for (size_t wIdx = 0; wIdx < processor.patchWires.size(); ++wIdx)
+    {
+        const auto& w = processor.patchWires[wIdx];
+        const PatchNode* nFrom = nullptr;
+        const PatchNode* nTo = nullptr;
+        for (const auto& n : processor.patchNodes)
+        {
+            if (n.id == w.fromNodeId) nFrom = &n;
+            if (n.id == w.toNodeId) nTo = &n;
+        }
+        if (nFrom != nullptr && nTo != nullptr)
+        {
+            float x1 = nFrom->x + nFrom->w;
+            float y1 = nFrom->y + nFrom->h * 0.5f;
+            float x2 = nTo->x;
+            float y2 = nTo->y + nTo->h * 0.5f;
+
+            juce::Path cable;
+            cable.startNewSubPath (x1, y1);
+            float ctrl = std::max (32.0f, std::abs (x2 - x1) * 0.5f);
+            cable.cubicTo (x1 + ctrl, y1, x2 - ctrl, y2, x2, y2);
+
+            g.setColour (w.enabled ? juce::Colour (0xff5aa9ff) : juce::Colour (0xff475266));
+            g.strokePath (cable, juce::PathStrokeType (w.enabled ? 2.4f : 1.5f));
+        }
+    }
+
+    // Draw nodes (Drag body to move, Drag bottom-right corner to resize, Click port/Right-click to connect)
+    for (size_t i = 0; i < processor.patchNodes.size(); ++i)
+    {
+        const auto& n = processor.patchNodes[i];
+        juce::Rectangle<float> nr (n.x, n.y, n.w, n.h);
+        g.setColour (n.active ? juce::Colour (0xff1d2738) : juce::Colour (0xff161a22));
+        g.fillRoundedRectangle (nr, 6.0f);
+        g.setColour (static_cast<int> (i) == connectFromIdx ? juce::Colour (0xffffd32a)
+                   : (n.active ? juce::Colour (0xff4cc98f) : juce::Colour (0xff3c475c)));
+        g.drawRoundedRectangle (nr.reduced (0.5f), 6.0f, 1.5f);
+
+        g.setColour (juce::Colours::white);
+        g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+        g.drawText (n.title, nr.reduced (8.0f, 4.0f), juce::Justification::topLeft, true);
+
+        g.setColour (juce::Colour (0xff8fa3c4));
+        g.setFont (juce::FontOptions (8.5f, juce::Font::plain));
+        g.drawText (n.category + (n.active ? " [ON]" : " [OFF]"), nr.reduced (8.0f, 18.0f), juce::Justification::topLeft, true);
+
+        // Input & Output ports
+        g.setColour (juce::Colour (0xffff66aa));
+        g.fillEllipse (n.x - 5.0f, n.y + n.h * 0.5f - 5.0f, 10.0f, 10.0f);
+        g.setColour (juce::Colour (0xff5aa9ff));
+        g.fillEllipse (n.x + n.w - 5.0f, n.y + n.h * 0.5f - 5.0f, 10.0f, 10.0f);
+
+        // Bottom-right resize grip triangle
+        g.setColour (juce::Colour (0xff9fb0cc));
+        juce::Path grip;
+        grip.startNewSubPath (nr.getRight() - 9.0f, nr.getBottom());
+        grip.lineTo (nr.getRight(), nr.getBottom() - 9.0f);
+        grip.lineTo (nr.getRight(), nr.getBottom());
+        grip.closeSubPath();
+        g.fillPath (grip);
+    }
+}
+
+void PatcherRoutingCanvas::mouseDown (const juce::MouseEvent& e)
+{
+    const juce::ScopedLock sl (processor.zoneLock);
+    draggedNodeIdx = -1;
+    resizingNode = false;
+
+    for (int i = static_cast<int> (processor.patchNodes.size()) - 1; i >= 0; --i)
+    {
+        auto& n = processor.patchNodes[static_cast<size_t> (i)];
+        juce::Rectangle<float> nr (n.x, n.y, n.w, n.h);
+        juce::Rectangle<float> outPort (n.x + n.w - 8.0f, n.y + n.h * 0.5f - 8.0f, 16.0f, 16.0f);
+        juce::Rectangle<float> resizeCorner (nr.getRight() - 12.0f, nr.getBottom() - 12.0f, 14.0f, 14.0f);
+
+        if (outPort.contains (e.position))
+        {
+            connectFromIdx = i;
+            repaint();
+            return;
+        }
+
+        if (connectFromIdx >= 0 && connectFromIdx != i)
+        {
+            processor.addPatchWire (processor.patchNodes[static_cast<size_t> (connectFromIdx)].id, n.id);
+            connectFromIdx = -1;
+            repaint();
+            return;
+        }
+
+        if (nr.contains (e.position))
+        {
+            if (e.mods.isRightButtonDown())
+            {
+                n.active = ! n.active;
+                repaint();
+                return;
+            }
+            draggedNodeIdx = i;
+            dragStartPos = e.position;
+            origX = n.x; origY = n.y; origW = n.w; origH = n.h;
+            resizingNode = resizeCorner.contains (e.position);
+            return;
+        }
+    }
+    connectFromIdx = -1;
+    repaint();
+}
+
+void PatcherRoutingCanvas::mouseDrag (const juce::MouseEvent& e)
+{
+    if (draggedNodeIdx < 0) return;
+    const juce::ScopedLock sl (processor.zoneLock);
+    if (draggedNodeIdx >= static_cast<int> (processor.patchNodes.size())) return;
+    auto& n = processor.patchNodes[static_cast<size_t> (draggedNodeIdx)];
+
+    float dx = e.position.x - dragStartPos.x;
+    float dy = e.position.y - dragStartPos.y;
+
+    if (resizingNode)
+    {
+        n.w = juce::jlimit (84.0f, 260.0f, snapVal (origW + dx));
+        n.h = juce::jlimit (38.0f, 140.0f, snapVal (origH + dy));
+    }
+    else
+    {
+        n.x = juce::jlimit (4.0f, std::max (20.0f, static_cast<float> (getWidth()) - n.w - 4.0f), snapVal (origX + dx));
+        n.y = juce::jlimit (4.0f, std::max (20.0f, static_cast<float> (getHeight()) - n.h - 4.0f), snapVal (origY + dy));
+    }
+    repaint();
+}
+
+void PatcherRoutingCanvas::mouseUp (const juce::MouseEvent&)
+{
+    draggedNodeIdx = -1;
+    resizingNode = false;
+}
+
 // ---------------- MainPluginView ----------------
 void MainPluginView::styleUniformSwitchButton (juce::TextButton& b, juce::Colour activeCol)
 {
     b.setClickingTogglesState (true);
-    b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff232b38));
+    int s = juce::jlimit (1, 10, audioProcessor.switchStyleId);
+    juce::Colour offCol = (s % 2 == 0) ? juce::Colour (0xff2b2538) : juce::Colour (0xff232b38);
+    b.setColour (juce::TextButton::buttonColourId, offCol);
     b.setColour (juce::TextButton::buttonOnColourId, activeCol);
     b.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffc9d4e8));
     b.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
 }
 
+void MainPluginView::applyAllStyles()
+{
+    int fStyle = juce::jlimit (1, 10, audioProcessor.faderStyleId);
+    HorizontalFader* allFaders[] = {
+        &shuffleFader, &timeRandFader, &velRandFader,
+        &grpVolFader, &grpPanFader, &crossfadeFader,
+        &pitchFader, &panFader, &volFader,
+        &attackFader, &decayFader, &sustainFader, &releaseFader,
+        &cutoffFader, &resFader, &fxP1, &fxP2, &fxP3
+    };
+    for (auto* hf : allFaders)
+        hf->applyFaderStyle (fStyle);
+
+    styleUniformSwitchButton (groupMuteBtn, juce::Colour (0xffee5253));
+    styleUniformSwitchButton (groupSoloBtn, juce::Colour (0xffe8a138));
+    styleUniformSwitchButton (selGroupOnlyBtn, juce::Colour (0xff4cc98f));
+    styleUniformSwitchButton (frrBtn, juce::Colour (0xffff5599));
+    styleUniformSwitchButton (pitchTrackBtn, juce::Colour (0xffe8a138));
+    styleUniformSwitchButton (realRRBtn, juce::Colour (0xff5aa9ff));
+    styleUniformSwitchButton (sampleLoopBtn, juce::Colour (0xff4cc98f));
+    styleUniformSwitchButton (autoLoopZeroBtn, juce::Colour (0xff38c4d9));
+    styleUniformSwitchButton (reverseBtn, juce::Colour (0xffe04f8a));
+    styleUniformSwitchButton (fxEnableBtn, juce::Colour (0xff4cc98f));
+    styleUniformSwitchButton (seqBypassBtn, juce::Colour (0xffee5253));
+    styleUniformSwitchButton (fxBypassBtn, juce::Colour (0xffee5253));
+
+    brandHeader.repaint();
+    repaint();
+}
+
 MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(float)> onScaleSelected)
     : audioProcessor (p), scaleCallback (std::move (onScaleSelected)),
-      brandHeader ([this]() { showScaleMenu(); }),
+      brandHeader (p, [this]() { showScaleMenu(); }),
       mountedCard ([this]()
       {
           audioProcessor.clearLoadedItemPanel();
@@ -937,11 +1234,11 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
           syncPerZoneControls();
           repaintDynamicAreas();
       }),
-      mainKeyMapper (p), seqComp (p), editKeyMapper (p), waveEditor (p), bottomPiano (p)
+      mainWaveDisplay (p), seqComp (p), editKeyMapper (p), waveEditor (p),
+      patchCanvas (p, 0), bottomPiano (p)
 {
     addAndMakeVisible (brandHeader);
 
-    // Persistent Library Controls
     addAndMakeVisible (addLibBtn);
     addAndMakeVisible (sortAzBtn);
     addAndMakeVisible (delLibBtn);
@@ -951,7 +1248,7 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
 
     addLibBtn.onClick = [this]()
     {
-        fileChooser = std::make_unique<juce::FileChooser> ("Select Sample/Library Folder (e.g. DRUMS, STRINGS)",
+        fileChooser = std::make_unique<juce::FileChooser> ("Select Sample/Library Folder (e.g. DRUMS)",
             juce::File::getSpecialLocation (juce::File::userDocumentsDirectory));
         fileChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
             [this] (const juce::FileChooser& fc)
@@ -984,11 +1281,13 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
         }
     };
 
-    // Top Bar: MAIN & EDIT buttons + Preset Name + SAVE / SAVE AS
+    // Top Bar: MAIN, EDIT, EDIT PANEL + Preset Name + SAVE / SAVE AS
     addAndMakeVisible (tabMainBtn);
     addAndMakeVisible (tabEditBtn);
-    tabMainBtn.onClick = [this]() { setActiveTab (ActiveTab::Main); };
-    tabEditBtn.onClick = [this]() { setActiveTab (ActiveTab::Edit); };
+    addAndMakeVisible (tabPanelBtn);
+    tabMainBtn.onClick  = [this]() { setActiveTab (ActiveTab::Main); };
+    tabEditBtn.onClick  = [this]() { setActiveTab (ActiveTab::Edit); };
+    tabPanelBtn.onClick = [this]() { setActiveTab (ActiveTab::EditPanel); };
 
     addAndMakeVisible (presetNameBox);
     presetNameBox.setMultiLine (false);
@@ -1014,14 +1313,15 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     addAndMakeVisible (mountedCard);
     mountedCard.setItem (audioProcessor.loadedItemName, audioProcessor.loadedItemActive);
 
-    mainKeyMapper.setReadOnly (true);
-    mainKeyMapper.onSelectionChanged = [this]() { syncPerZoneControls(); };
-    addAndMakeVisible (mainKeyMapper);
+    addAndMakeVisible (mainWaveDisplay);
 
     rhythmSeqHeaderLbl.setText ("RHYTHM SEQUENCER", juce::dontSendNotification);
     rhythmSeqHeaderLbl.setFont (juce::FontOptions (12.0f, juce::Font::bold));
     rhythmSeqHeaderLbl.setColour (juce::Label::textColourId, juce::Colour (0xffc9d4e8));
     addAndMakeVisible (rhythmSeqHeaderLbl);
+
+    addAndMakeVisible (seqBypassBtn);
+    seqBypassBtn.onClick = [this]() { audioProcessor.seqBypass.store (seqBypassBtn.getToggleState()); };
 
     addAndMakeVisible (seqComp);
 
@@ -1076,21 +1376,17 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     seqClearBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff592836));
     seqClearBtn.onClick = [this]() { audioProcessor.clearSelectedZoneRhythm(); seqComp.repaint(); };
 
-    // ---------------- EDIT TAB (Scrollable Spacious Layout with Horizontal Faders) ----------------
+    // ---------------- EDIT TAB ----------------
     addAndMakeVisible (editViewport);
     editViewport.setViewedComponent (&editContent, false);
     editViewport.setScrollBarsShown (true, false);
 
-    // 1. Group Strip (+ Grp, Del Grp, Group Select, Rename, M, S, Sel Grp, KS + Horizontal Vol & Pan Faders)
     editContent.addAndMakeVisible (addGroupBtn);
     addGroupBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2b3c54));
     addGroupBtn.onClick = [this]()
     {
         audioProcessor.createEmptyGroup();
-        refreshGroupBoxes();
-        syncGroupControls();
-        syncFxControls();
-        bottomPiano.repaint();
+        refreshGroupBoxes(); syncGroupControls(); syncFxControls(); bottomPiano.repaint();
     };
 
     editContent.addAndMakeVisible (delGroupBtn);
@@ -1099,11 +1395,7 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     {
         if (audioProcessor.deleteSelectedGroup())
         {
-            refreshGroupBoxes();
-            syncGroupControls();
-            syncFxControls();
-            syncPerZoneControls();
-            repaintDynamicAreas();
+            refreshGroupBoxes(); syncGroupControls(); syncFxControls(); syncPerZoneControls(); repaintDynamicAreas();
         }
     };
 
@@ -1116,9 +1408,7 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
             const juce::ScopedLock sl (audioProcessor.zoneLock);
             audioProcessor.selectedGroupIndex = juce::jlimit (0, static_cast<int> (audioProcessor.groups.size()) - 1, id - 1);
         }
-        syncGroupControls();
-        syncFxControls();
-        editKeyMapper.repaint();
+        syncGroupControls(); syncFxControls(); editKeyMapper.repaint();
     };
 
     editContent.addAndMakeVisible (groupNameEdit);
@@ -1137,7 +1427,6 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     groupNameEdit.onFocusLost = applyGroupName;
 
     editContent.addAndMakeVisible (groupMuteBtn);
-    styleUniformSwitchButton (groupMuteBtn, juce::Colour (0xffee5253));
     groupMuteBtn.onClick = [this]()
     {
         const juce::ScopedLock sl (audioProcessor.zoneLock);
@@ -1146,7 +1435,6 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     };
 
     editContent.addAndMakeVisible (groupSoloBtn);
-    styleUniformSwitchButton (groupSoloBtn, juce::Colour (0xffe8a138));
     groupSoloBtn.onClick = [this]()
     {
         const juce::ScopedLock sl (audioProcessor.zoneLock);
@@ -1155,7 +1443,6 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     };
 
     editContent.addAndMakeVisible (selGroupOnlyBtn);
-    styleUniformSwitchButton (selGroupOnlyBtn, juce::Colour (0xff4cc98f));
     selGroupOnlyBtn.setToggleState (audioProcessor.selectGroupOnly.load(), juce::dontSendNotification);
     editKeyMapper.setFilterToSelectedGroup (audioProcessor.selectGroupOnly.load());
     selGroupOnlyBtn.onClick = [this]()
@@ -1197,13 +1484,10 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
             audioProcessor.groups[static_cast<size_t> (audioProcessor.selectedGroupIndex)].pan = static_cast<float> (grpPanFader.slider.getValue());
     };
 
-    // 2. Key Mapper Uniform Switch/Button Bar (FRR, PITCH, ALL, Del, Auto Grid)
     editContent.addAndMakeVisible (frrBtn);
-    styleUniformSwitchButton (frrBtn, juce::Colour (0xffff5599));
     frrAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "frr", frrBtn);
 
     editContent.addAndMakeVisible (pitchTrackBtn);
-    styleUniformSwitchButton (pitchTrackBtn, juce::Colour (0xffe8a138));
     pitchTrackAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "pitchTrack", pitchTrackBtn);
 
     editContent.addAndMakeVisible (selectAllZonesBtn);
@@ -1219,13 +1503,7 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     autoGridBtn.onClick = [this]() { editKeyMapper.autoGridSelectedZones(); };
 
     editContent.addAndMakeVisible (velGridBox);
-    velGridBox.addItem ("Vel: Free", 1);
-    velGridBox.addItem ("Vel: 2", 2);
-    velGridBox.addItem ("Vel: 4", 3);
-    velGridBox.addItem ("Vel: 8", 4);
-    velGridBox.addItem ("Vel: 16", 5);
-    velGridBox.addItem ("Vel: 32", 6);
-    velGridBox.addItem ("Vel: 64", 7);
+    velGridBox.addItemList ({ "Vel: Free", "Vel: 2", "Vel: 4", "Vel: 8", "Vel: 16", "Vel: 32", "Vel: 64" }, 1);
     velGridBox.setSelectedId (3, juce::dontSendNotification);
     velGridBox.onChange = [this]()
     {
@@ -1246,18 +1524,9 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
             const juce::ScopedLock sl (audioProcessor.zoneLock);
             const auto& sel = editKeyMapper.getSelectedZoneIndices();
             if (! sel.empty())
-            {
-                for (int idx : sel)
-                {
-                    auto& z = audioProcessor.zones[static_cast<size_t> (idx)];
-                    z.colourIndex = cIdx; z.colour = RythmeAudioProcessor::getPaletteColour (cIdx);
-                }
-            }
+                for (int idx : sel) { auto& z = audioProcessor.zones[static_cast<size_t> (idx)]; z.colourIndex = cIdx; z.colour = RythmeAudioProcessor::getPaletteColour (cIdx); }
             else if (audioProcessor.selectedZoneIndex >= 0 && audioProcessor.selectedZoneIndex < static_cast<int> (audioProcessor.zones.size()))
-            {
-                auto& z = audioProcessor.zones[static_cast<size_t> (audioProcessor.selectedZoneIndex)];
-                z.colourIndex = cIdx; z.colour = RythmeAudioProcessor::getPaletteColour (cIdx);
-            }
+                { auto& z = audioProcessor.zones[static_cast<size_t> (audioProcessor.selectedZoneIndex)]; z.colourIndex = cIdx; z.colour = RythmeAudioProcessor::getPaletteColour (cIdx); }
             repaintDynamicAreas();
         }
     };
@@ -1266,7 +1535,6 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     editKeyMapper.onSelectionChanged = [this]() { syncPerZoneControls(); };
     editContent.addAndMakeVisible (editKeyMapper);
 
-    // 3. Wave Editor Bar (Sample Name Only, Play, RR, LOOP, Auto Loop Z-Cross, Loop X-Fade Fader, REV, NORM, Reset)
     editContent.addAndMakeVisible (wavePlayBtn);
     wavePlayBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff27473b));
     wavePlayBtn.onClick = [this]()
@@ -1291,7 +1559,6 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     };
 
     editContent.addAndMakeVisible (realRRBtn);
-    styleUniformSwitchButton (realRRBtn, juce::Colour (0xff5aa9ff));
     realRRBtn.onClick = [this]()
     {
         const juce::ScopedLock sl (audioProcessor.zoneLock);
@@ -1300,7 +1567,6 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     };
 
     editContent.addAndMakeVisible (sampleLoopBtn);
-    styleUniformSwitchButton (sampleLoopBtn, juce::Colour (0xff4cc98f));
     sampleLoopBtn.onClick = [this]()
     {
         const juce::ScopedLock sl (audioProcessor.zoneLock);
@@ -1310,7 +1576,6 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     };
 
     editContent.addAndMakeVisible (autoLoopZeroBtn);
-    styleUniformSwitchButton (autoLoopZeroBtn, juce::Colour (0xff38c4d9));
     autoLoopZeroBtn.setToggleState (true, juce::dontSendNotification);
     autoLoopZeroBtn.onClick = [this]()
     {
@@ -1329,17 +1594,16 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
         }
     };
 
-    loopXfadeFader.slider.setRange (0.0, 0.35, 0.01);
-    editContent.addAndMakeVisible (loopXfadeFader);
-    loopXfadeFader.slider.onValueChange = [this]()
+    crossfadeFader.slider.setRange (0.0, 0.35, 0.01);
+    editContent.addAndMakeVisible (crossfadeFader);
+    crossfadeFader.slider.onValueChange = [this]()
     {
         const juce::ScopedLock sl (audioProcessor.zoneLock);
         if (audioProcessor.selectedZoneIndex >= 0 && audioProcessor.selectedZoneIndex < static_cast<int> (audioProcessor.zones.size()))
-            audioProcessor.zones[static_cast<size_t> (audioProcessor.selectedZoneIndex)].loopCrossfade = static_cast<float> (loopXfadeFader.slider.getValue());
+            audioProcessor.zones[static_cast<size_t> (audioProcessor.selectedZoneIndex)].loopCrossfade = static_cast<float> (crossfadeFader.slider.getValue());
     };
 
     editContent.addAndMakeVisible (reverseBtn);
-    styleUniformSwitchButton (reverseBtn, juce::Colour (0xffe04f8a));
     reverseBtn.onClick = [this]()
     {
         const juce::ScopedLock sl (audioProcessor.zoneLock);
@@ -1355,9 +1619,7 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     resetZoneBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff3b334a));
     resetZoneBtn.onClick = [this]()
     {
-        audioProcessor.resetSelectedZoneDefaults();
-        syncPerZoneControls();
-        waveEditor.repaint();
+        audioProcessor.resetSelectedZoneDefaults(); syncPerZoneControls(); waveEditor.repaint();
     };
 
     editContent.addAndMakeVisible (waveEditor);
@@ -1384,7 +1646,9 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     bindZoneFader (cutoffFader,  80.0, 20000.0, 10.0, [] (SampleZone& z, float v) { z.cutoffHz = v; });
     bindZoneFader (resFader,     0.3, 5.0, 0.05,    [] (SampleZone& z, float v) { z.resQ = v; });
 
-    // 4. Effects Section below Divider Line + Horizontal FX Faders
+    editContent.addAndMakeVisible (fxBypassBtn);
+    fxBypassBtn.onClick = [this]() { audioProcessor.fxBypass.store (fxBypassBtn.getToggleState()); };
+
     editContent.addAndMakeVisible (fxSlotSelectBox);
     for (int s = 0; s < SampleGroup::numFxSlots; ++s) fxSlotSelectBox.addItem ("FX " + juce::String (s + 1), s + 1);
     fxSlotSelectBox.setSelectedId (1, juce::dontSendNotification);
@@ -1406,7 +1670,6 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
     };
 
     editContent.addAndMakeVisible (fxEnableBtn);
-    styleUniformSwitchButton (fxEnableBtn, juce::Colour (0xff4cc98f));
     fxEnableBtn.onClick = [this]()
     {
         int sIdx = juce::jlimit (0, SampleGroup::numFxSlots - 1, fxSlotSelectBox.getSelectedId() - 1);
@@ -1433,12 +1696,130 @@ MainPluginView::MainPluginView (RythmeAudioProcessor& p, std::function<void(floa
         };
     }
 
+    // ---------------- EDIT PANEL CONTROLS ----------------
+    addAndMakeVisible (panelGridBox);
+    panelGridBox.addItemList ({ "Grid: Free", "Grid: 10x", "Grid: 20x", "Grid: 30x", "Grid: 40x", "Grid: 50x" }, 1);
+    panelGridBox.setSelectedId (1, juce::dontSendNotification);
+    panelGridBox.onChange = [this]()
+    {
+        int id = panelGridBox.getSelectedId();
+        int px = (id <= 1) ? 0 : ((id - 1) * 10);
+        patchCanvas.setGridStepPx (px);
+    };
+
+    addAndMakeVisible (knobStyleBox);
+    knobStyleBox.addItem ("Knob Style 1..10", 1);
+    for (int i = 1; i <= 10; ++i) knobStyleBox.addItem ("Knob Style " + juce::String (i), i + 1);
+    knobStyleBox.setSelectedId (audioProcessor.knobStyleId + 1, juce::dontSendNotification);
+    knobStyleBox.onChange = [this]()
+    {
+        int id = knobStyleBox.getSelectedId();
+        if (id >= 2) audioProcessor.knobStyleId = id - 1;
+        applyAllStyles();
+    };
+
+    addAndMakeVisible (faderStyleBox);
+    for (int i = 1; i <= 10; ++i) faderStyleBox.addItem ("Fader Style " + juce::String (i), i);
+    faderStyleBox.setSelectedId (audioProcessor.faderStyleId, juce::dontSendNotification);
+    faderStyleBox.onChange = [this]()
+    {
+        audioProcessor.faderStyleId = juce::jlimit (1, 10, faderStyleBox.getSelectedId());
+        applyAllStyles();
+    };
+
+    addAndMakeVisible (switchStyleBox);
+    for (int i = 1; i <= 10; ++i) switchStyleBox.addItem ("Switch Style " + juce::String (i), i);
+    switchStyleBox.setSelectedId (audioProcessor.switchStyleId, juce::dontSendNotification);
+    switchStyleBox.onChange = [this]()
+    {
+        audioProcessor.switchStyleId = juce::jlimit (1, 10, switchStyleBox.getSelectedId());
+        applyAllStyles();
+    };
+
+    addAndMakeVisible (logoDesignBox);
+    logoDesignBox.addItemList ({ "Logo: Shield", "Logo: Pill", "Logo: Hex", "Logo: Circle" }, 1);
+    logoDesignBox.setSelectedId (audioProcessor.logoStyleId, juce::dontSendNotification);
+    logoDesignBox.onChange = [this]()
+    {
+        audioProcessor.logoStyleId = juce::jlimit (1, 4, logoDesignBox.getSelectedId());
+        brandHeader.repaint();
+    };
+
+    addAndMakeVisible (logoLettersEdit);
+    logoLettersEdit.setMultiLine (false);
+    logoLettersEdit.setText (audioProcessor.brandLetters, juce::dontSendNotification);
+    logoLettersEdit.setTextToShowWhenEmpty ("Logo Letters", juce::Colour (0xff6d7b94));
+    logoLettersEdit.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff141922));
+    logoLettersEdit.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff3c4960));
+    logoLettersEdit.setColour (juce::TextEditor::textColourId, juce::Colours::white);
+    logoLettersEdit.onTextChange = [this]()
+    {
+        audioProcessor.brandLetters = logoLettersEdit.getText().trim().toUpperCase();
+        brandHeader.repaint();
+    };
+
+    addAndMakeVisible (titleTextEdit);
+    titleTextEdit.setMultiLine (false);
+    titleTextEdit.setText (audioProcessor.pluginTitleText, juce::dontSendNotification);
+    titleTextEdit.setTextToShowWhenEmpty ("Plugin Title", juce::Colour (0xff6d7b94));
+    titleTextEdit.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff141922));
+    titleTextEdit.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff3c4960));
+    titleTextEdit.setColour (juce::TextEditor::textColourId, juce::Colours::white);
+    titleTextEdit.onTextChange = [this]()
+    {
+        audioProcessor.pluginTitleText = titleTextEdit.getText().trim();
+        brandHeader.repaint();
+    };
+
+    addAndMakeVisible (newNodeNameEdit);
+    newNodeNameEdit.setMultiLine (false);
+    newNodeNameEdit.setTextToShowWhenEmpty ("New Knob / Wave / Switch", juce::Colour (0xff6d7b94));
+    newNodeNameEdit.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff141922));
+    newNodeNameEdit.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff3c4960));
+    newNodeNameEdit.setColour (juce::TextEditor::textColourId, juce::Colours::white);
+
+    addAndMakeVisible (addPatchNodeBtn);
+    addPatchNodeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2b3c54));
+    addPatchNodeBtn.onClick = [this]()
+    {
+        audioProcessor.addCustomPatchNode (newNodeNameEdit.getText().trim(), "CUSTOM");
+        newNodeNameEdit.clear();
+        patchCanvas.repaint();
+    };
+
+    addAndMakeVisible (patchCanvas);
+
+    addAndMakeVisible (panelTargetMainBtn);
+    panelTargetMainBtn.onClick = [this]()
+    {
+        panelSubTarget = 0;
+        panelTargetMainBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2b5876));
+        panelTargetEditBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff232b38));
+    };
+
+    addAndMakeVisible (panelTargetEditBtn);
+    panelTargetEditBtn.onClick = [this]()
+    {
+        panelSubTarget = 1;
+        panelTargetEditBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2b5876));
+        panelTargetMainBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff232b38));
+    };
+
+    addAndMakeVisible (panelDoneBtn);
+    panelDoneBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2d7a56));
+    panelDoneBtn.onClick = [this]()
+    {
+        applyAllStyles();
+        setActiveTab (panelSubTarget == 0 ? ActiveTab::Main : ActiveTab::Edit);
+    };
+
     addAndMakeVisible (bottomPiano);
 
     rebuildLibraryRows();
     refreshGroupBoxes();
     syncGroupControls();
     syncFxControls();
+    applyAllStyles();
     setActiveTab (ActiveTab::Main);
     syncPerZoneControls();
 }
@@ -1482,9 +1863,11 @@ void MainPluginView::loadLibraryItem (const juce::File& file)
     {
         audioProcessor.loadPresetMn6x (file);
         presetNameBox.setText (audioProcessor.currentPresetName, juce::dontSendNotification);
+        logoLettersEdit.setText (audioProcessor.brandLetters, juce::dontSendNotification);
+        titleTextEdit.setText (audioProcessor.pluginTitleText, juce::dontSendNotification);
         audioProcessor.setLoadedItemInPanel (file.getFileNameWithoutExtension(), file, -1);
         mountedCard.setItem (file.getFileNameWithoutExtension(), true);
-        refreshGroupBoxes(); syncGroupControls(); syncFxControls();
+        refreshGroupBoxes(); syncGroupControls(); syncFxControls(); applyAllStyles();
     }
     else
     {
@@ -1564,15 +1947,18 @@ void MainPluginView::applyBpmText()
 void MainPluginView::setActiveTab (ActiveTab tab)
 {
     activeTab = tab;
-    bool isMain = (tab == ActiveTab::Main);
-    bool isEdit = (tab == ActiveTab::Edit);
+    bool isMain  = (tab == ActiveTab::Main);
+    bool isEdit  = (tab == ActiveTab::Edit);
+    bool isPanel = (tab == ActiveTab::EditPanel);
 
-    tabMainBtn.setColour (juce::TextButton::buttonColourId, isMain ? juce::Colour (0xffc93b7b) : juce::Colour (0xff242c3a));
-    tabEditBtn.setColour (juce::TextButton::buttonColourId, isEdit ? juce::Colour (0xffc93b7b) : juce::Colour (0xff242c3a));
+    tabMainBtn.setColour  (juce::TextButton::buttonColourId, isMain  ? juce::Colour (0xffc93b7b) : juce::Colour (0xff242c3a));
+    tabEditBtn.setColour  (juce::TextButton::buttonColourId, isEdit  ? juce::Colour (0xffc93b7b) : juce::Colour (0xff242c3a));
+    tabPanelBtn.setColour (juce::TextButton::buttonColourId, isPanel ? juce::Colour (0xffc93b7b) : juce::Colour (0xff242c3a));
 
     mountedCard.setVisible (isMain);
-    mainKeyMapper.setVisible (isMain);
+    mainWaveDisplay.setVisible (isMain);
     rhythmSeqHeaderLbl.setVisible (isMain);
+    seqBypassBtn.setVisible (isMain);
     seqComp.setVisible (isMain);
     playPauseBtn.setVisible (isMain);
     hostSyncBtn.setVisible (isMain);
@@ -1587,6 +1973,20 @@ void MainPluginView::setActiveTab (ActiveTab tab)
     seqClearBtn.setVisible (isMain);
 
     editViewport.setVisible (isEdit);
+
+    panelGridBox.setVisible (isPanel);
+    knobStyleBox.setVisible (isPanel);
+    faderStyleBox.setVisible (isPanel);
+    switchStyleBox.setVisible (isPanel);
+    logoDesignBox.setVisible (isPanel);
+    logoLettersEdit.setVisible (isPanel);
+    titleTextEdit.setVisible (isPanel);
+    newNodeNameEdit.setVisible (isPanel);
+    addPatchNodeBtn.setVisible (isPanel);
+    patchCanvas.setVisible (isPanel);
+    panelTargetMainBtn.setVisible (isPanel);
+    panelTargetEditBtn.setVisible (isPanel);
+    panelDoneBtn.setVisible (isPanel);
 
     resized();
     repaint();
@@ -1627,7 +2027,7 @@ void MainPluginView::syncPerZoneControls()
     realRRBtn.setToggleState (z.realRREnabled, juce::dontSendNotification);
     sampleLoopBtn.setToggleState (z.sampleLoop, juce::dontSendNotification);
     autoLoopZeroBtn.setToggleState (z.autoLoopZeroCross, juce::dontSendNotification);
-    loopXfadeFader.slider.setValue (z.loopCrossfade, juce::dontSendNotification);
+    crossfadeFader.slider.setValue (z.loopCrossfade, juce::dontSendNotification);
     reverseBtn.setToggleState (z.reverse, juce::dontSendNotification);
 
     pitchFader.slider.setValue (z.pitchSemi, juce::dontSendNotification);
@@ -1684,7 +2084,6 @@ void MainPluginView::paintListBoxItem (int rowNumber, juce::Graphics& g, int wid
 
     if (vr.isCategory)
     {
-        // Modern large expandable category box (e.g., DRUMS)
         auto box = juce::Rectangle<float> (2.0f, 2.0f, static_cast<float> (width - 4), static_cast<float> (height - 4));
         g.setColour (vr.expanded ? juce::Colour (0xff25354f) : juce::Colour (0xff1c2433));
         g.fillRoundedRectangle (box, 5.0f);
@@ -1701,7 +2100,6 @@ void MainPluginView::paintListBoxItem (int rowNumber, juce::Graphics& g, int wid
     }
     else
     {
-        // Indented sub-item inside expanded category (e.g., Kick)
         g.fillAll (rowIsSelected ? juce::Colour (0xff2e4a73) : juce::Colour (0xff121720));
         g.setColour (juce::Colour (0xff4cc98f));
         g.fillRect (14, 7, 3, height - 14);
@@ -1806,7 +2204,7 @@ void MainPluginView::handleFilesDropped (const juce::StringArray& files, int loc
 
 void MainPluginView::repaintDynamicAreas()
 {
-    if (mainKeyMapper.isVisible()) mainKeyMapper.repaint();
+    if (mainWaveDisplay.isVisible()) mainWaveDisplay.repaint();
     if (seqComp.isVisible()) seqComp.repaint();
     if (editKeyMapper.isVisible()) editKeyMapper.repaint();
     if (waveEditor.isVisible()) waveEditor.repaint();
@@ -1818,7 +2216,6 @@ void MainPluginView::layoutEditContent (int viewportW)
     int contentW = std::max (660, viewportW - 14);
     int y = 4;
 
-    // 1. Group Strip (+ Grp, Del Grp, Group Select, Rename, M, S, Sel Grp, KS + Horizontal Vol & Pan Faders)
     auto grpTop = juce::Rectangle<int> (4, y, contentW - 8, 28);
     addGroupBtn.setBounds     (grpTop.removeFromLeft (54).reduced (1));
     delGroupBtn.setBounds     (grpTop.removeFromLeft (58).reduced (1));
@@ -1836,7 +2233,6 @@ void MainPluginView::layoutEditContent (int viewportW)
     grpPanFader.setBounds (grpFaders.reduced (3, 0));
     y += 40;
 
-    // 2. Key Mapper Uniform Button Bar (26px) + Tall Key Mapper (245px)
     auto mapHdr = juce::Rectangle<int> (4, y, contentW - 8, 26);
     frrBtn.setBounds            (mapHdr.removeFromLeft (48).reduced (1));
     pitchTrackBtn.setBounds     (mapHdr.removeFromLeft (56).reduced (1));
@@ -1847,10 +2243,9 @@ void MainPluginView::layoutEditContent (int viewportW)
     velGridBox.setBounds        (mapHdr.removeFromRight (84).reduced (1));
     y += 28;
 
-    editKeyMapper.setBounds (4, y, contentW - 8, 245);
-    y += 253;
+    editKeyMapper.setBounds (4, y, contentW - 8, 235);
+    y += 243;
 
-    // 3. Wave Editor Bar + Big Wave Display (180px)
     auto wavHdr = juce::Rectangle<int> (4, y, contentW - 8, 26);
     wavePlayBtn.setBounds     (wavHdr.removeFromLeft (44).reduced (1));
     trackSelectBox.setBounds  (wavHdr.removeFromLeft (148).reduced (1));
@@ -1862,14 +2257,12 @@ void MainPluginView::layoutEditContent (int viewportW)
     resetZoneBtn.setBounds    (wavHdr.removeFromRight (52).reduced (1));
     y += 28;
 
-    waveEditor.setBounds (4, y, contentW - 8, 180);
-    y += 186;
+    waveEditor.setBounds (4, y, contentW - 8, 175);
+    y += 181;
 
-    // Loop X-Fade Horizontal Fader
-    loopXfadeFader.setBounds (4, y, contentW - 8, 34);
+    crossfadeFader.setBounds (4, y, contentW - 8, 34);
     y += 38;
 
-    // Sample Horizontal Faders in 3 clean rows (3 per row -> wide, easy-to-drag horizontal faders!)
     HorizontalFader* sFaders[9] = {
         &pitchFader, &panFader, &volFader,
         &attackFader, &decayFader, &sustainFader,
@@ -1884,13 +2277,12 @@ void MainPluginView::layoutEditContent (int viewportW)
         y += 38;
     }
 
-    // 4. Divider Line + Lower Effects Section with Horizontal Faders
-    y += 8;
-    // Divider drawn in paint/content
+    y += 12;
     auto fxHdr = juce::Rectangle<int> (4, y, contentW - 8, 28);
     fxSlotSelectBox.setBounds (fxHdr.removeFromLeft (78).reduced (1));
     fxTypeBox.setBounds       (fxHdr.removeFromLeft (96).reduced (1));
-    fxEnableBtn.setBounds     (fxHdr.removeFromLeft (52).reduced (1));
+    fxEnableBtn.setBounds     (fxHdr.removeFromLeft (48).reduced (1));
+    fxBypassBtn.setBounds     (fxHdr.removeFromLeft (58).reduced (1));
     y += 34;
 
     auto fxFaderRow = juce::Rectangle<int> (4, y, contentW - 8, 36);
@@ -1908,12 +2300,11 @@ void MainPluginView::paint (juce::Graphics& g)
     g.fillAll (juce::Colour (0xff1c222d));
     g.setColour (juce::Colour (0xff6e7b91));
     g.setFont (10.0f);
-    g.drawText ("v1.2.1", getWidth() - 56, getHeight() - 15, 48, 13, juce::Justification::centredRight);
+    g.drawText (audioProcessor.getBuildVersionString(), getWidth() - 64, getHeight() - 15, 56, 13, juce::Justification::centredRight);
 
-    // Divider line between Sample Controls and Effects inside EDIT viewport
     if (activeTab == ActiveTab::Edit && editViewport.isVisible())
     {
-        int divY = editViewport.getY() + 658 - editViewport.getViewPositionY();
+        int divY = editViewport.getY() + 654 - editViewport.getViewPositionY();
         if (divY > editViewport.getY() && divY < editViewport.getBottom())
         {
             g.setColour (juce::Colour (0xff3c4c66));
@@ -1929,7 +2320,6 @@ void MainPluginView::resized()
 {
     auto area = getLocalBounds().reduced (8);
 
-    // Left Panel: Top N6 + RYTHME Brand Header, then + ADD LIBRARY / A-Z / DEL, then Persistent Expandable Library List
     auto libArea = area.removeFromLeft (172);
     brandHeader.setBounds (libArea.removeFromTop (44).reduced (1));
     libArea.removeFromTop (6);
@@ -1942,16 +2332,15 @@ void MainPluginView::resized()
 
     area.removeFromLeft (8);
 
-    // Top Header Bar: MAIN & EDIT buttons + Preset Name + SAVE / SAVE AS
     auto topBar = area.removeFromTop (30);
-    tabMainBtn.setBounds    (topBar.removeFromLeft (96).reduced (2, 1));
-    tabEditBtn.setBounds    (topBar.removeFromLeft (96).reduced (2, 1));
-    topBar.removeFromLeft (8);
-    presetNameBox.setBounds (topBar.removeFromLeft (306).reduced (2, 2));
-    saveBtn.setBounds       (topBar.removeFromLeft (72).reduced (2));
-    saveAsBtn.setBounds     (topBar.removeFromLeft (78).reduced (2));
+    tabMainBtn.setBounds  (topBar.removeFromLeft (72).reduced (2, 1));
+    tabEditBtn.setBounds  (topBar.removeFromLeft (72).reduced (2, 1));
+    tabPanelBtn.setBounds (topBar.removeFromLeft (96).reduced (2, 1));
+    topBar.removeFromLeft (6);
+    presetNameBox.setBounds (topBar.removeFromLeft (240).reduced (2, 2));
+    saveBtn.setBounds       (topBar.removeFromLeft (66).reduced (2));
+    saveAsBtn.setBounds     (topBar.removeFromLeft (74).reduced (2));
 
-    // Bottom 10-Octave Piano Strip
     auto pianoArea = area.removeFromBottom (34);
     bottomPiano.setBounds (pianoArea.reduced (0, 2));
     area.removeFromBottom (4);
@@ -1959,13 +2348,15 @@ void MainPluginView::resized()
     if (activeTab == ActiveTab::Main)
     {
         area.removeFromTop (4);
-        mountedCard.setBounds (area.removeFromTop (38));
+        mountedCard.setBounds (area.removeFromTop (36));
 
         area.removeFromTop (4);
-        mainKeyMapper.setBounds (area.removeFromTop (140));
+        mainWaveDisplay.setBounds (area.removeFromTop (136));
 
         area.removeFromTop (5);
-        rhythmSeqHeaderLbl.setBounds (area.removeFromTop (17));
+        auto seqHdr = area.removeFromTop (18);
+        rhythmSeqHeaderLbl.setBounds (seqHdr.removeFromLeft (165));
+        seqBypassBtn.setBounds (seqHdr.removeFromRight (56).reduced (1, 0));
         area.removeFromTop (2);
         seqComp.setBounds (area.removeFromTop (216));
 
@@ -1989,11 +2380,37 @@ void MainPluginView::resized()
         seqLoopBtn.setBounds  (bottomCtrl.removeFromLeft (58).reduced (2, 15));
         seqClearBtn.setBounds (bottomCtrl.removeFromLeft (40).reduced (2, 15));
     }
-    else
+    else if (activeTab == ActiveTab::Edit)
     {
         area.removeFromTop (6);
         editViewport.setBounds (area);
         layoutEditContent (area.getWidth());
+    }
+    else
+    {
+        area.removeFromTop (4);
+        auto row1 = area.removeFromTop (26);
+        panelGridBox.setBounds   (row1.removeFromLeft (108).reduced (1));
+        knobStyleBox.setBounds   (row1.removeFromLeft (138).reduced (1));
+        faderStyleBox.setBounds  (row1.removeFromLeft (124).reduced (1));
+        switchStyleBox.setBounds (row1.removeFromLeft (128).reduced (1));
+        panelDoneBtn.setBounds   (row1.removeFromRight (72).reduced (1));
+
+        area.removeFromTop (4);
+        auto row2 = area.removeFromTop (26);
+        logoDesignBox.setBounds   (row2.removeFromLeft (116).reduced (1));
+        logoLettersEdit.setBounds (row2.removeFromLeft (86).reduced (2, 1));
+        titleTextEdit.setBounds   (row2.removeFromLeft (128).reduced (2, 1));
+        newNodeNameEdit.setBounds (row2.removeFromLeft (148).reduced (2, 1));
+        addPatchNodeBtn.setBounds (row2.removeFromLeft (84).reduced (1));
+
+        area.removeFromTop (4);
+        auto bottomBar = area.removeFromBottom (28);
+        panelTargetMainBtn.setBounds (bottomBar.removeFromLeft (96).reduced (2, 1));
+        panelTargetEditBtn.setBounds (bottomBar.removeFromLeft (96).reduced (2, 1));
+
+        area.removeFromBottom (4);
+        patchCanvas.setBounds (area);
     }
 }
 

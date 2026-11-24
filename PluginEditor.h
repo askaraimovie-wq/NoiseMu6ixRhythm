@@ -4,44 +4,31 @@
 #include <functional>
 #include <set>
 #include <vector>
+#include <map>
 
-// Horizontal Fader Slider with Label
 class HorizontalFader : public juce::Component
 {
 public:
     HorizontalFader (const juce::String& labelText);
     void resized() override;
+    void applyFaderStyle (int styleId);
     juce::Slider slider;
     juce::Label label;
 };
 
-// Modern Geometric N6 Logo + RYTHME Title Badge
-class N6BrandHeader : public juce::Component
+// Customizable Brand Logo + Title Header (Logo designs 1..4 + editable letters & title)
+class BrandLogoHeader : public juce::Component
 {
 public:
-    N6BrandHeader (std::function<void()> onClickMenu);
+    BrandLogoHeader (RythmeAudioProcessor& p, std::function<void()> onClickMenu);
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent&) override { if (onClick) onClick(); }
 
 private:
+    RythmeAudioProcessor& processor;
     std::function<void()> onClick;
 };
 
-// Expandable / Collapsible Category Header Row (e.g., DRUMS -> click to expand/collapse items below)
-class CategoryHeaderRow : public juce::Component
-{
-public:
-    CategoryHeaderRow (const juce::String& titleText, bool isExpanded, std::function<void()> onToggle);
-    void paint (juce::Graphics& g) override;
-    void mouseDown (const juce::MouseEvent&) override { if (onToggle) onToggle(); }
-
-private:
-    juce::String title;
-    bool expanded = false;
-    std::function<void()> onToggle;
-};
-
-// Mounted Sound Item Card on MAIN page with Close 'X' button (clears back to empty state)
 class MountedSoundCard : public juce::Component
 {
 public:
@@ -55,6 +42,17 @@ private:
     bool active = false;
     juce::TextButton closeBtn { "X" };
     std::function<void()> onClose;
+};
+
+// Live Waveform Display on MAIN Page (no S/E markers, shows active key waveform + playhead)
+class LiveMainWaveDisplay : public juce::Component
+{
+public:
+    LiveMainWaveDisplay (RythmeAudioProcessor& p);
+    void paint (juce::Graphics& g) override;
+
+private:
+    RythmeAudioProcessor& processor;
 };
 
 class ColorPianoStrip : public juce::Component
@@ -126,7 +124,6 @@ private:
     void sanitizeSelection();
 };
 
-// Wave Editor with Mouse Drag for Start, End, Loop Start, Loop End + Fade In/Out handles on Start & End
 class WaveEditorComponent : public juce::Component
 {
 public:
@@ -157,11 +154,34 @@ private:
     float snapToGrid (float normX) const;
 };
 
+// Patcher-Style Node & Wire Routing Canvas inside EDIT PANEL
+class PatcherRoutingCanvas : public juce::Component
+{
+public:
+    PatcherRoutingCanvas (RythmeAudioProcessor& p, int gridStepPx);
+    void setGridStepPx (int px) { gridStepPx = px; repaint(); }
+    void paint (juce::Graphics& g) override;
+    void mouseDown (const juce::MouseEvent& e) override;
+    void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseUp (const juce::MouseEvent& e) override;
+
+private:
+    RythmeAudioProcessor& processor;
+    int gridStepPx = 0; // 0 = Free
+    int draggedNodeIdx = -1;
+    bool resizingNode = false;
+    juce::Point<float> dragStartPos;
+    float origX = 0.0f, origY = 0.0f, origW = 136.0f, origH = 52.0f;
+    int connectFromIdx = -1;
+
+    float snapVal (float v) const;
+};
+
 class MainPluginView : public juce::Component,
                        public juce::ListBoxModel
 {
 public:
-    enum class ActiveTab { Main = 0, Edit };
+    enum class ActiveTab { Main = 0, Edit, EditPanel };
 
     MainPluginView (RythmeAudioProcessor& p, std::function<void(float)> onScaleSelected);
     void paint (juce::Graphics& g) override;
@@ -183,11 +203,10 @@ private:
     RythmeAudioProcessor& audioProcessor;
     std::function<void(float)> scaleCallback;
     ActiveTab activeTab = ActiveTab::Main;
+    int panelSubTarget = 0; // 0 = MAIN layout, 1 = EDIT layout
 
-    // Top-Left N6 Logo + RYTHME Brand Header
-    N6BrandHeader brandHeader;
+    BrandLogoHeader brandHeader;
 
-    // Persistent Library Panel: + ADD LIBRARY / A-Z / DEL + Expandable Category Boxes
     juce::TextButton addLibBtn { "+ ADD LIBRARY" };
     juce::TextButton sortAzBtn { "A-Z" };
     juce::TextButton delLibBtn { "DEL" };
@@ -203,17 +222,19 @@ private:
     std::vector<VisibleLibRow> visibleLibRows;
     juce::ListBox libraryList;
 
-    // Top Bar: MAIN & EDIT buttons + Preset Name + SAVE / SAVE AS
+    // Top Bar: MAIN, EDIT, EDIT PANEL + Preset Name + SAVE / SAVE AS
     juce::TextButton tabMainBtn { "MAIN" };
     juce::TextButton tabEditBtn { "EDIT" };
+    juce::TextButton tabPanelBtn { "EDIT PANEL" };
     juce::TextEditor presetNameBox;
     juce::TextButton saveBtn { "SAVE" };
     juce::TextButton saveAsBtn { "SAVE AS" };
 
     // ---------------- MAIN TAB ----------------
     MountedSoundCard mountedCard;
-    KeyMapperComponent mainKeyMapper;
+    LiveMainWaveDisplay mainWaveDisplay;
     juce::Label rhythmSeqHeaderLbl;
+    juce::TextButton seqBypassBtn { "Bypass" };
     RhythmSequencerComponent seqComp;
     juce::TextButton playPauseBtn { "PLAY" };
     juce::ToggleButton hostSyncBtn { "SYNC" };
@@ -225,11 +246,10 @@ private:
     juce::ToggleButton seqLoopBtn { "LOOP" };
     juce::TextButton seqClearBtn { "Clr" };
 
-    // ---------------- EDIT TAB (Scrollable Spacious Layout with Horizontal Faders) ----------------
+    // ---------------- EDIT TAB ----------------
     juce::Viewport editViewport;
     juce::Component editContent;
 
-    // Group Strip: + Grp, Del Grp, Group Select, Rename, M, S, Sel Grp, KS + Horizontal Vol & Pan Faders
     juce::TextButton addGroupBtn { "+ Grp" };
     juce::TextButton delGroupBtn { "Del Grp" };
     juce::ComboBox groupSelectBox;
@@ -240,7 +260,6 @@ private:
     juce::ComboBox groupKsBox;
     HorizontalFader grpVolFader { "Group Vol" }, grpPanFader { "Group Pan" };
 
-    // Key Mapper Uniform Switch/Button Bar (No FVL!) + Tall Key Mapper
     juce::TextButton frrBtn { "FRR" };
     juce::TextButton pitchTrackBtn { "PITCH" };
     juce::TextButton selectAllZonesBtn { "ALL" };
@@ -250,30 +269,42 @@ private:
     juce::ComboBox zoneColourBox;
     KeyMapperComponent editKeyMapper;
 
-    // Wave Editor Uniform Switch/Button Bar (Sample Name Only, Play, RR, LOOP, Auto Loop Z-Cross, REV, NORM, Reset)
     juce::TextButton wavePlayBtn { "Play" };
     juce::ComboBox trackSelectBox;
     juce::TextButton realRRBtn { "RR" };
     juce::TextButton sampleLoopBtn { "LOOP" };
     juce::TextButton autoLoopZeroBtn { "Auto Loop Z-Cross" };
-    HorizontalFader loopXfadeFader { "Crossfade" };
+    HorizontalFader crossfadeFader { "Crossfade" };
     juce::TextButton reverseBtn { "REV" };
     juce::TextButton normalizeBtn { "NORM" };
     juce::TextButton resetZoneBtn { "Reset" };
     WaveEditorComponent waveEditor;
 
-    // Sample Horizontal Faders (Pitch, Pan, Vol, Atk, Dec, Sus, Rel, Cut, Res)
     HorizontalFader pitchFader { "Pitch" }, panFader { "Pan" }, volFader { "Vol" };
     HorizontalFader attackFader { "Atk" }, decayFader { "Dec" }, sustainFader { "Sus" }, releaseFader { "Rel" };
     HorizontalFader cutoffFader { "Cut" }, resFader { "Res" };
 
-    // Effects Section below Divider Line + Horizontal FX Faders
+    juce::TextButton fxBypassBtn { "Bypass" };
     juce::ComboBox fxSlotSelectBox;
     juce::ComboBox fxTypeBox;
     juce::TextButton fxEnableBtn { "ON" };
     HorizontalFader fxP1 { "P1" }, fxP2 { "P2" }, fxP3 { "P3" };
 
-    // Bottom 10-Octave Piano Strip
+    // ---------------- EDIT PANEL TAB (Grid Free/10x..50x + Styles + Brand/Logo + Patcher Routing + DONE) ----------------
+    juce::ComboBox panelGridBox;
+    juce::ComboBox knobStyleBox;
+    juce::ComboBox faderStyleBox;
+    juce::ComboBox switchStyleBox;
+    juce::ComboBox logoDesignBox;
+    juce::TextEditor logoLettersEdit;
+    juce::TextEditor titleTextEdit;
+    juce::TextButton addPatchNodeBtn { "+ Add Node" };
+    juce::TextEditor newNodeNameEdit;
+    PatcherRoutingCanvas patchCanvas;
+    juce::TextButton panelTargetMainBtn { "MAIN PAGE" };
+    juce::TextButton panelTargetEditBtn { "EDIT PAGE" };
+    juce::TextButton panelDoneBtn { "DONE" };
+
     ColorPianoStrip bottomPiano;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> frrAtt, pitchTrackAtt, seqLoopAtt, hostSyncAtt;
@@ -282,6 +313,7 @@ private:
 
     std::unique_ptr<juce::FileChooser> fileChooser;
 
+    void applyAllStyles();
     void styleUniformSwitchButton (juce::TextButton& b, juce::Colour activeCol);
     void setActiveTab (ActiveTab tab);
     void layoutEditContent (int viewportW);
@@ -300,8 +332,8 @@ class RythmeAudioProcessorEditor : public juce::AudioProcessorEditor,
                                    public juce::Timer
 {
 public:
-    static constexpr int baseWidth = 960;
-    static constexpr int baseHeight = 600;
+    static constexpr int baseWidth = 980;
+    static constexpr int baseHeight = 620;
 
     RythmeAudioProcessorEditor (RythmeAudioProcessor&);
     ~RythmeAudioProcessorEditor() override;
