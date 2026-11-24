@@ -6,72 +6,125 @@
 #include <vector>
 #include <map>
 
-class HorizontalFader : public juce::Component
+// Custom 10-Style Horizontal Fader (ignores mouse wheel scroll so scrolling EDIT page never alters values!)
+class StyledHorizontalFader : public juce::Component
 {
 public:
-    HorizontalFader (const juce::String& labelText, double defaultVal = 0.0);
-    void resized() override;
-    void applyFaderStyle (int styleId);
-    juce::Slider slider;
-    juce::Label label;
-};
-
-// Center-Zero Panning Fader (-50 .. 0 .. +50) with left-only / right-only fill & Double-Click 0 reset
-class CenterZeroPanFader : public juce::Component
-{
-public:
-    CenterZeroPanFader (const juce::String& labelText);
-    void setValue (float v, bool notify = false);
-    float getValue() const { return value; }
-    void setAccentColour (juce::Colour c) { accentCol = c; repaint(); }
-    std::function<void(float)> onValueChanged;
-
-    void paint (juce::Graphics& g) override;
-    void mouseDown (const juce::MouseEvent& e) override;
-    void mouseDrag (const juce::MouseEvent& e) override;
-    void mouseDoubleClick (const juce::MouseEvent&) override;
-
-private:
-    juce::String title;
-    float value = 0.0f; // -50 .. +50
-    juce::Colour accentCol { 0xff4ca3ff };
-    void updateFromX (int mx);
-};
-
-// BPM-style Type-In + Vertical Mouse Drag + Double-Click Default Number Box
-class DragTypeNumberBox : public juce::Component
-{
-public:
-    DragTypeNumberBox (const juce::String& labelText, const juce::String& unitSuffix,
-                       double minV, double maxV, double defaultV, int decimals = 1);
+    StyledHorizontalFader (const juce::String& labelText, double minV, double maxV, double defaultV, int decimals = 2);
     void setValue (double v, bool notify = false);
     double getValue() const { return currentValue; }
+    void setStyleId (int id) { styleId = juce::jlimit (1, 10, id); repaint(); }
+    void setLabelText (const juce::String& t) { title = t; repaint(); }
     std::function<void(double)> onValueChanged;
 
     void paint (juce::Graphics& g) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
-    void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent& e) override;
+
+private:
+    juce::String title;
+    double minVal = 0.0, maxVal = 1.0, defaultVal = 0.0;
+    int numDecimals = 2;
+    double currentValue = 0.0;
+    int styleId = 1;
+    bool isEditingText = false;
+    juce::TextEditor editor;
+
+    void updateFromX (int mx);
+    void openTypeEditor();
+    void commitText();
+};
+
+// Center-Zero Panning Fader (-50 .. 0 .. +50) - Left/Right Drag only, Right-Click Type-In, Double-Left-Click = 0
+class CenterZeroPanFader : public juce::Component
+{
+public:
+    CenterZeroPanFader (const juce::String& labelText);
+    void setValue (float v, bool notify = false);
+    float getValue() const { return value; }
+    void setStyleId (int id) { styleId = juce::jlimit (1, 10, id); repaint(); }
+    std::function<void(float)> onValueChanged;
+
+    void paint (juce::Graphics& g) override;
+    void resized() override;
+    void mouseDown (const juce::MouseEvent& e) override;
+    void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseDoubleClick (const juce::MouseEvent& e) override;
+
+private:
+    juce::String title;
+    float value = 0.0f;
+    int styleId = 1;
+    bool isEditingText = false;
+    juce::TextEditor editor;
+
+    void updateFromX (int mx);
+    void openTypeEditor();
+    void commitText();
+};
+
+// Type-In + Vertical Mouse Drag Box:
+// - Left-Drag UP/DOWN adjusts value
+// - Single RIGHT-CLICK opens Type-In editor
+// - DOUBLE LEFT-CLICK resets to Default
+// - Ignores mouse wheel scroll so scrolling EDIT page never alters values!
+class DragTypeNumberBox : public juce::Component
+{
+public:
+    DragTypeNumberBox (const juce::String& labelText, const juce::String& unitSuffix,
+                       double minV, double maxV, double defaultV, int decimals = 1, bool showTopLabel = true);
+    void setValue (double v, bool notify = false);
+    double getValue() const { return currentValue; }
+    void setStyleId (int id) { styleId = juce::jlimit (1, 10, id); repaint(); }
+    std::function<void(double)> onValueChanged;
+
+    void paint (juce::Graphics& g) override;
+    void resized() override;
+    void mouseDown (const juce::MouseEvent& e) override;
+    void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseDoubleClick (const juce::MouseEvent& e) override;
 
 private:
     juce::String title;
     juce::String suffix;
-    double minVal = 0.0;
-    double maxVal = 100.0;
-    double defaultVal = 0.0;
+    double minVal = 0.0, maxVal = 100.0, defaultVal = 0.0;
     int numDecimals = 1;
+    bool hasLabel = true;
     double currentValue = 0.0;
     double dragStartValue = 0.0;
     int dragStartY = 0;
+    int styleId = 1;
     bool isEditingText = false;
 
     juce::TextEditor editor;
+    void openTypeEditor();
     void commitText();
     juce::String formatDisplay() const;
 };
 
-// ADSR Envelope Visualizer Graph (no Curve parameter)
+// Vector Gear / Screw Button (draws clean 8-tooth gear without Unicode box glitches)
+class GearIconButton : public juce::Button
+{
+public:
+    GearIconButton();
+    void paintButton (juce::Graphics& g, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
+};
+
+// Custom 10-Style Switch Button (actually changes shape/indicator style 1..10, not just colour)
+class StyledSwitchButton : public juce::TextButton
+{
+public:
+    StyledSwitchButton (const juce::String& text);
+    void setStyleId (int id, juce::Colour activeC);
+    void paintButton (juce::Graphics& g, bool over, bool down) override;
+
+private:
+    int styleId = 1;
+    juce::Colour activeCol { 0xff4ca3ff };
+};
+
 class AdsrGraphComponent : public juce::Component
 {
 public:
@@ -82,7 +135,6 @@ private:
     RythmeAudioProcessor& processor;
 };
 
-// FabFilter-style Interactive FX Curve & Signal Graph Display
 class FabStyleFxDisplay : public juce::Component
 {
 public:
@@ -95,7 +147,6 @@ private:
     int slotIdx = 0;
 };
 
-// Customizable Brand Logo + Title Header (Logo shapes 1..4 + Logo Colour + Letters + Title)
 class BrandLogoHeader : public juce::Component
 {
 public:
@@ -123,7 +174,6 @@ private:
     std::function<void()> onClose;
 };
 
-// Vintage Black & White Scrolling Digital Output Waveform Display on MAIN Page
 class LiveMainWaveDisplay : public juce::Component
 {
 public:
@@ -233,18 +283,17 @@ private:
     float snapToGrid (float normX) const;
 };
 
-// Inline Layout Customize Overlay (Move anywhere + Bottom-Right Corner Resize + Grid Free/10x..50x + DONE / Reset)
+// Accurate Coordinate-Aware Inline Layout Customize Overlay (Default Grid 20x!)
 class LayoutCustomizeOverlay : public juce::Component
 {
 public:
     struct TargetEntry
     {
-        juce::String name;
+        juce::String key;
         juce::Component* comp = nullptr;
-        juce::Rectangle<int> defaultBounds;
     };
 
-    LayoutCustomizeOverlay (std::function<void()> onDoneClicked, std::function<void()> onResetClicked);
+    LayoutCustomizeOverlay();
     void setTargets (std::vector<TargetEntry> items);
     void setGridStep (int px) { gridStepPx = px; repaint(); }
     void paint (juce::Graphics& g) override;
@@ -254,13 +303,11 @@ public:
 
 private:
     std::vector<TargetEntry> targets;
-    int gridStepPx = 0;
+    int gridStepPx = 20; // Default 20x as requested!
     int activeIdx = -1;
     bool isResizing = false;
     juce::Point<int> dragStart;
-    juce::Rectangle<int> startBounds;
-    std::function<void()> onDone;
-    std::function<void()> onReset;
+    juce::Rectangle<int> startLocalBounds;
 
     int snap (int v) const;
 };
@@ -293,7 +340,9 @@ private:
     ActiveTab activeTab = ActiveTab::Main;
     bool layoutEditMode = false;
     bool brandSettingsVisible = false;
-    std::map<juce::String, juce::Rectangle<int>> customBoundsMap;
+
+    std::map<juce::String, juce::Rectangle<int>> mainCustomBounds;
+    std::map<juce::String, juce::Rectangle<int>> editCustomBounds;
 
     BrandLogoHeader brandHeader;
 
@@ -312,25 +361,25 @@ private:
     std::vector<VisibleLibRow> visibleLibRows;
     juce::ListBox libraryList;
 
-    // Top Bar: MAIN, EDIT + Preset Name + SAVE / SAVE AS + Top-Right Gear Settings
     juce::TextButton tabMainBtn { "MAIN" };
     juce::TextButton tabEditBtn { "EDIT" };
     juce::TextEditor presetNameBox;
     juce::TextButton saveBtn { "SAVE" };
     juce::TextButton saveAsBtn { "SAVE AS" };
-    juce::TextButton topGearBtn { "SET" };
+    GearIconButton topGearBtn;
 
     // ---------------- MAIN TAB ----------------
     MountedSoundCard mountedCard;
     LiveMainWaveDisplay mainWaveDisplay;
     juce::Label rhythmSeqHeaderLbl;
-    juce::TextButton seqBypassBtn { "Bypass" };
+    StyledSwitchButton seqBypassBtn { "Bypass" };
     RhythmSequencerComponent seqComp;
     juce::TextButton playPauseBtn { "PLAY" };
     juce::ToggleButton hostSyncBtn { "SYNC" };
-    juce::Label bpmLabel;
-    juce::TextEditor bpmInputBox;
-    HorizontalFader shuffleFader { "Shuffle", 0.0 }, timeRandFader { "Time Rnd", 0.0 }, velRandFader { "Vel Rnd", 0.0 };
+    DragTypeNumberBox bpmBox { "BPM", "", 40.0, 240.0, 120.0, 1, true };
+    StyledHorizontalFader shuffleFader { "Shuffle", 0.0, 1.0, 0.0, 2 };
+    StyledHorizontalFader timeRandFader { "Time Rnd", 0.0, 1.0, 0.0, 2 };
+    StyledHorizontalFader velRandFader { "Vel Rnd", 0.0, 1.0, 0.0, 2 };
     juce::Label gridLabel;
     juce::ComboBox gridBox;
     juce::ToggleButton seqLoopBtn { "LOOP" };
@@ -344,16 +393,16 @@ private:
     juce::TextButton delGroupBtn { "Del Grp" };
     juce::ComboBox groupSelectBox;
     juce::TextEditor groupNameEdit;
-    juce::TextButton groupMuteBtn { "M" };
-    juce::TextButton groupSoloBtn { "S" };
-    juce::TextButton selGroupOnlyBtn { "Sel Grp" };
+    StyledSwitchButton groupMuteBtn { "M" };
+    StyledSwitchButton groupSoloBtn { "S" };
+    StyledSwitchButton selGroupOnlyBtn { "Sel Grp" };
     juce::ComboBox groupKsBox;
     DragTypeNumberBox grpVolBox { "Group Vol", " dB", 0.0, 100.0, 80.0, 0 };
     CenterZeroPanFader grpPanFader { "Group Pan" };
 
-    juce::TextButton frrBtn { "FRR" };
-    juce::TextButton fvlBtn { "FVL" };
-    juce::TextButton pitchTrackBtn { "PITCH" };
+    StyledSwitchButton frrBtn { "FRR" };
+    StyledSwitchButton fvlBtn { "FVL" };
+    StyledSwitchButton pitchTrackBtn { "PITCH" };
     juce::TextButton selectAllZonesBtn { "ALL" };
     juce::TextButton delZoneBtn { "Del" };
     juce::TextButton autoGridBtn { "Auto Grid" };
@@ -363,16 +412,15 @@ private:
 
     juce::TextButton wavePlayBtn { "Play" };
     juce::ComboBox trackSelectBox;
-    juce::TextButton realRRBtn { "RR" };
-    juce::TextButton sampleLoopBtn { "LOOP" };
-    juce::TextButton autoLoopZeroBtn { "Auto Loop Z-Cross" };
-    HorizontalFader crossfadeFader { "Crossfade", 0.04 };
-    juce::TextButton reverseBtn { "REV" };
+    StyledSwitchButton realRRBtn { "RR" };
+    StyledSwitchButton sampleLoopBtn { "LOOP" };
+    StyledSwitchButton autoLoopZeroBtn { "Auto Loop Z-Cross" };
+    StyledHorizontalFader crossfadeFader { "Crossfade", 0.0, 0.35, 0.04, 2 };
+    StyledSwitchButton reverseBtn { "REV" };
     juce::TextButton normalizeBtn { "NORM" };
     juce::TextButton resetZoneBtn { "Reset" };
     WaveEditorComponent waveEditor;
 
-    // Sample Type-In/Drag + Center-Zero Pan + ADSR Graph
     DragTypeNumberBox pitchBox   { "Pitch", " st", -24.0, 24.0, 0.0, 1 };
     CenterZeroPanFader panFader  { "Pan" };
     DragTypeNumberBox volBox     { "Volume", " dB", 0.0, 100.0, 80.0, 0 };
@@ -383,15 +431,18 @@ private:
     DragTypeNumberBox releaseBox { "Release", " ms", 1.0, 10000.0, 250.0, 1 };
     AdsrGraphComponent adsrGraph;
 
-    // FabFilter-Style Effects (Curve/Signal Display + 5 Controls + ON/Bypass)
-    juce::TextButton fxBypassBtn { "Bypass" };
+    StyledSwitchButton fxBypassBtn { "Bypass" };
     juce::ComboBox fxSlotSelectBox;
     juce::ComboBox fxTypeBox;
-    juce::TextButton fxEnableBtn { "ON" };
+    StyledSwitchButton fxEnableBtn { "ON" };
     FabStyleFxDisplay fxDisplay;
-    HorizontalFader fxP1 { "P1", 0.5 }, fxP2 { "P2", 0.5 }, fxP3 { "P3", 0.5 }, fxP4 { "P4", 0.5 }, fxP5 { "P5", 0.5 };
+    StyledHorizontalFader fxP1 { "P1", 0.0, 1.0, 0.5, 2 };
+    StyledHorizontalFader fxP2 { "P2", 0.0, 1.0, 0.5, 2 };
+    StyledHorizontalFader fxP3 { "P3", 0.0, 1.0, 0.5, 2 };
+    StyledHorizontalFader fxP4 { "P4", 0.0, 1.0, 0.5, 2 };
+    StyledHorizontalFader fxP5 { "P5", 0.0, 1.0, 0.5, 2 };
 
-    // Top-Right Gear Layout & Global Styles Bar (inline when Gear clicked)
+    // Top-Right Gear Inline Customize Toolbar
     juce::ComboBox gearGridBox;
     juce::ComboBox gearKnobStyleBox;
     juce::ComboBox gearFaderStyleBox;
@@ -400,7 +451,7 @@ private:
     juce::TextButton gearDoneBtn { "DONE" };
     LayoutCustomizeOverlay customizeOverlay;
 
-    // Logo/Title Menu -> Settings Panel (all in one place side-by-side + Apply/OK)
+    // Logo/Title -> Settings Panel
     juce::ComboBox brandShapeBox;
     juce::ComboBox brandColourBox;
     juce::TextEditor brandLettersEdit;
@@ -410,22 +461,20 @@ private:
     ColorPianoStrip bottomPiano;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> frrAtt, fvlAtt, pitchTrackAtt, seqLoopAtt, hostSyncAtt;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> shuffleAtt, timeRandAtt, velRandAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> gridAtt;
 
     std::unique_ptr<juce::FileChooser> fileChooser;
 
     void applyAllStyles();
-    void styleUniformSwitchButton (juce::TextButton& b, juce::Colour activeCol);
     void setActiveTab (ActiveTab tab);
     void enterLayoutCustomizeMode (bool enable);
+    void saveCustomizedBoundsFromOverlay();
     void layoutEditContent (int viewportW);
     void rebuildLibraryRows();
     void loadLibraryItem (const juce::File& file);
     void refreshGroupBoxes();
     void syncGroupControls();
     void syncFxControls();
-    void applyBpmText();
     void saveAsDialog();
     void showBrandAndScaleMenu();
 };

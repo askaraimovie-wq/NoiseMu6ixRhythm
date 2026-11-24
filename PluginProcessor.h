@@ -10,7 +10,7 @@
 #include <string>
 
 #ifndef RYTHME_AUTO_VERSION_STR
-#define RYTHME_AUTO_VERSION_STR "v1.2.3"
+#define RYTHME_AUTO_VERSION_STR "v1.2.5"
 #endif
 
 struct FastSVF
@@ -64,7 +64,6 @@ enum class SimpleFxType
     Reverb
 };
 
-// FabFilter-style full parameter FX slot (5 controls + ON/Bypass)
 struct SimpleFxSlot
 {
     SimpleFxType type = SimpleFxType::Off;
@@ -109,8 +108,8 @@ struct SampleGroup
     bool muted = false;
     bool soloed = false;
     int keyswitchNote = -1;
-    float volumeDb100 = 80.0f; // 0..100 dB scale (default 80)
-    float pan50 = 0.0f;        // -50..+50 (default 0)
+    float volumeDb100 = 80.0f;
+    float pan50 = 0.0f;
     std::array<SimpleFxSlot, numFxSlots> fxSlots;
 };
 
@@ -137,13 +136,13 @@ struct SampleZone
     float fadeOutNorm = 0.0f;
     bool reverse = false;
 
-    float pitchSemi = 0.0f;     // -24..+24 (default 0)
-    float pan50 = 0.0f;         // -50..+50 (default 0)
-    float volumeDb100 = 80.0f;  // 0..100 dB scale (default 80)
-    float attackMs = 0.10f;     // ms (default 0.10 ms)
-    float decayMs = 300.0f;     // ms (default 300 ms)
-    float sustainPct = 85.0f;   // 0..100% (default 85)
-    float releaseMs = 250.0f;   // ms (default 250 ms)
+    float pitchSemi = 0.0f;
+    float pan50 = 0.0f;
+    float volumeDb100 = 80.0f;
+    float attackMs = 0.10f;
+    float decayMs = 300.0f;
+    float sustainPct = 85.0f;
+    float releaseMs = 250.0f;
     float cutoffHz = 20000.0f;
     float resQ = 0.707f;
 
@@ -183,15 +182,6 @@ struct LibraryCategoryEntry
     juce::File folder;
     bool expanded = false;
     std::vector<juce::File> items;
-};
-
-struct WidgetLayoutRect
-{
-    int x = 0;
-    int y = 0;
-    int w = 100;
-    int h = 40;
-    bool customized = false;
 };
 
 class RythmeAudioProcessor : public juce::AudioProcessor
@@ -243,7 +233,6 @@ public:
     void clearSelectedZoneRhythm();
     float snapNormToZeroCrossing (int zoneIndex, float rawNorm) const;
 
-    // Live output scrolling waveform buffer (Right -> Left scrolling digital display)
     static constexpr int scopeHistorySize = 360;
     void copyScopeHistory (std::array<float, scopeHistorySize>& dest, bool& isSounding) const;
 
@@ -283,7 +272,6 @@ public:
     juce::File loadedItemFile;
     int loadedItemKey = -1;
 
-    // Branding / Logo / Title & Global Styles
     juce::String brandLetters { "N6" };
     juce::String pluginTitleText { "RYTHME" };
     int logoStyleId = 1;    // 1..4
@@ -314,7 +302,6 @@ private:
     uint64_t rrSeedCounter = 1;
     float lastRrPitch = 0.0f;
 
-    // Live output scope ring buffer
     mutable juce::SpinLock scopeLock;
     std::array<float, scopeHistorySize> scopeRing {};
     int scopeWriteIdx = 0;

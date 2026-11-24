@@ -105,7 +105,6 @@ void SimpleFxSlot::processStereo (float* L, float* R, int numSamples, double sr)
     }
     else if (type == SimpleFxType::Saturation)
     {
-        // p1 = Drive (default 1.0 -> 100% requested), p2 = Tone, p3 = Dynamics, p4 = Level, p5 = Mix
         float drive = 1.0f + p1 * 7.5f;
         float norm  = 1.0f / std::tanh (drive);
         float cutHz = 1600.0f + p2 * 18400.0f;
@@ -158,18 +157,10 @@ void SimpleFxSlot::processStereo (float* L, float* R, int numSamples, double sr)
 juce::Colour RythmeAudioProcessor::getPaletteColour (int idx)
 {
     static const juce::Colour palette[numPaletteColours] = {
-        juce::Colour (0xff4ca3ff), // 0: Blue
-        juce::Colour (0xffe04f8a), // 1: Pink
-        juce::Colour (0xffee5253), // 2: Red
-        juce::Colour (0xffee7b38), // 3: Orange
-        juce::Colour (0xffe8a138), // 4: Amber
-        juce::Colour (0xffd9c838), // 5: Gold
-        juce::Colour (0xff4cc98f), // 6: Emerald
-        juce::Colour (0xff2eb872), // 7: Green
-        juce::Colour (0xff38c4d9), // 8: Cyan
-        juce::Colour (0xffa66cff), // 9: Purple
-        juce::Colour (0xffc56cf0), // 10: Magenta
-        juce::Colour (0xffd0d6e0)  // 11: Vintage White/Silver
+        juce::Colour (0xff4ca3ff), juce::Colour (0xffe04f8a), juce::Colour (0xffee5253),
+        juce::Colour (0xffee7b38), juce::Colour (0xffe8a138), juce::Colour (0xffd9c838),
+        juce::Colour (0xff4cc98f), juce::Colour (0xff2eb872), juce::Colour (0xff38c4d9),
+        juce::Colour (0xffa66cff), juce::Colour (0xffc56cf0), juce::Colour (0xffd0d6e0)
     };
     return palette[juce::jlimit (0, numPaletteColours - 1, idx)];
 }
@@ -187,7 +178,6 @@ float RythmeAudioProcessor::vol100ToLinearGain (float vol100)
 {
     float v = juce::jlimit (0.0f, 100.0f, vol100);
     if (v <= 0.01f) return 0.0f;
-    // 80 -> 1.0f unity gain, 100 -> ~+3.5dB (1.5f), 0 -> silence
     return std::pow (v / 80.0f, 1.35f);
 }
 
@@ -729,7 +719,6 @@ void RythmeAudioProcessor::startVoice (int zoneIdx, int midiNote, float velocity
         v.velocity = juce::jlimit (0.04f, 1.0f, v.velocity + delta);
     }
 
-    // Clean, transparent FRR: preserves full original body/punch with subtle organic micro-variations
     float rrPitchCents = 0.0f;
     float rrStartOffsetSamples = 0.0f;
     float rrGainMult = 1.0f;
@@ -742,24 +731,20 @@ void RythmeAudioProcessor::startVoice (int zoneIdx, int midiNote, float velocity
         float u2 = static_cast<float> (std::fmod (n * 0.56984029099 + rng.nextFloat() * 0.09, 1.0));
         float u3 = static_cast<float> (std::fmod (n * 0.43015970900 + rng.nextFloat() * 0.06, 1.0));
 
-        rrPitchCents = (u1 * 2.0f - 1.0f) * 5.5f; // subtle +/- 5.5 cents (no dullness)
+        rrPitchCents = (u1 * 2.0f - 1.0f) * 5.5f;
         if (std::abs (rrPitchCents - lastRrPitch) < 1.8f) rrPitchCents = -rrPitchCents;
         lastRrPitch = rrPitchCents;
 
-        rrStartOffsetSamples = u2 * static_cast<float> (currentSampleRate * 0.0012); // max 1.2ms
-        rrGainMult = 0.96f + u3 * 0.04f; // 0.96..1.00 (never makes sample weak/dull)
+        rrStartOffsetSamples = u2 * static_cast<float> (currentSampleRate * 0.0012);
+        rrGainMult = 0.96f + u3 * 0.04f;
         rrExtraAttackMs = u2 * 0.8f;
     }
 
-    // Cut-Only FVL: user sample is 100% Max ceiling (vel = 1.0 -> full brightness, never boosted above original!)
-    // Lower velocities smoothly attenuate high shelf / low-pass cutoff below original brightness
     float fvlCutHz = 20000.0f;
     float fvlGainScale = 1.0f;
     if (fvlOn)
     {
         float vNorm = juce::jlimit (0.0f, 1.0f, v.velocity);
-        // At vNorm = 1.0 (127), fvlCutHz = 20000 Hz (100% untouched original tone!)
-        // As vNorm decreases below 1.0, smoothly cuts high frequencies down to 1400 Hz
         fvlCutHz = 1400.0f + std::pow (vNorm, 1.45f) * 18600.0f;
         fvlGainScale = 0.45f + 0.55f * vNorm;
     }
@@ -1136,7 +1121,6 @@ void RythmeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
         }
     }
 
-    // Feed live summed stereo output into Vintage Scrolling Digital Waveform Display
     float blockPeak = 0.0f;
     for (int i = 0; i < numSamples; ++i)
         blockPeak = std::max (blockPeak, std::max (std::abs (outL[i]), std::abs (outR[i])));
